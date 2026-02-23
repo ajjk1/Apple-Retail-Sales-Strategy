@@ -107,8 +107,10 @@ const PIE_YEARS = [2020, 2021, 2022, 2023, 2024] as const;
 const QUANTITY_UNIT = '대';
 const QUANTITY_LABEL = `수량(단위: ${QUANTITY_UNIT})`;
 
-/** 클라이언트 전용: NEXT_PUBLIC_API_URL 사용. undefined/ localhost 시 vercel.app 이면 HF Space URL 상수 사용. */
-const API_BASE_FALLBACK = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+/** 클라이언트 전용: NEXT_PUBLIC_API_URL 사용. 미설정/ localhost 시 vercel.app이면 NEXT_PUBLIC_FALLBACK_BACKEND_URL 또는 HF Space 상수 사용. */
+const API_BASE_FALLBACK =
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_FALLBACK_BACKEND_URL) ||
+  'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
 
 function isUnsafeApiBase(url: string | undefined): boolean {
   if (url == null || typeof url !== 'string') return true;

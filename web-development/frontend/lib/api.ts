@@ -1,8 +1,10 @@
 /**
  * 클라이언트 전용: 백엔드 베이스 URL.
- * NEXT_PUBLIC_API_URL 사용. undefined/빈값/ localhost 시 배포 환경(vercel.app)이면 상수 fallback 사용해 경로 꼬임 방지.
+ * NEXT_PUBLIC_API_URL 사용. 미설정/ localhost 시 vercel.app에서는 환경 변수 NEXT_PUBLIC_FALLBACK_BACKEND_URL 또는 상수 fallback 사용.
  */
-const API_BASE_FALLBACK = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+const API_BASE_FALLBACK =
+  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_FALLBACK_BACKEND_URL) ||
+  'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
 
 function isUnsafeApiBase(url: string | undefined): boolean {
   if (url == null || typeof url !== 'string') return true;
