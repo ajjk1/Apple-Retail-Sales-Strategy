@@ -460,6 +460,7 @@ def _inv_run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_safety_stock_summary():
+    """재고 상태별 건수. 상태는 한글(위험, 과잉, 정상)로 반환."""
     df = load_sales_dataframe() if callable(load_sales_dataframe) else None
     if df is None or df.empty:
         return {"statuses": [], "total_count": 0}
@@ -468,7 +469,14 @@ def get_safety_stock_summary():
         return {"statuses": [], "total_count": 0}
     status_counts = df["Status"].value_counts().reset_index()
     status_counts.columns = ["status", "count"]
-    statuses = [{"status": str(row["status"]).strip() if pd.notna(row["status"]) else "", "count": int(row["count"])} for _, row in status_counts.iterrows()]
+    # 상태 영문 → 한글 매핑
+    status_ko_map = {"Danger": "위험", "Overstock": "과잉", "Normal": "정상"}
+    statuses = []
+    for _, row in status_counts.iterrows():
+        st = str(row["status"]).strip() if pd.notna(row["status"]) else ""
+        cnt = int(row["count"])
+        st_ko = status_ko_map.get(st, st)
+        statuses.append({"status": st_ko, "count": cnt})
     total_count = sum(s["count"] for s in statuses)
     return {"statuses": statuses, "total_count": total_count}
 
@@ -522,31 +530,87 @@ def get_kpi_summary(target_product: Optional[str] = None):
 
 
 def get_inventory_list(status_filter: Optional[list] = None):
+    """
+    Inventory Action Center: 매장별 재고 목록.
+    - 매장(Store_Name) 기준 집계, 없으면 제품(Product_Name) 기준 집계 후 Store_Name 키로 반환.
+    - 현재 재고(Inventory)에 0.1~3.5 배 랜덤 상수를 곱하여 시뮬레이션.
+    - 상태(Status)는 한글로 반환: 위험, 과잉, 정상.
+    """
+    # 데이터 로드 및 파이프라인 적용
     df = load_sales_dataframe() if callable(load_sales_dataframe) else None
-    if df is None or df.empty:
+    if df is None:
+        return []
+    if df.empty:
         return []
     df = _inv_run_inventory_pipeline(df)
-    if df is None or df.empty or "Product_Name" not in df.columns:
+    if df is None:
         return []
+    if df.empty:
+        return []
+    if "Product_Name" not in df.columns:
+        return []
+    # 필수 컬럼 확인
     need = ["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money"]
     if not all(c in df.columns for c in need):
         return []
+    # 집계 기준 컬럼: 매장별(Store_Name) 우선, 없으면 제품별(Product_Name)
+    group_col = None
+    if "Store_Name" in df.columns:
+        group_col = "Store_Name"
+    else:
+        group_col = "Product_Name"
+    # 상태 필터 적용 (한글·영문 모두 허용)
     if status_filter:
-        df = df[df["Status"].isin(status_filter)]
+        status_map_en_to_ko = {"Danger": "위험", "Overstock": "과잉", "Normal": "정상"}
+        status_map_ko_to_en = {"위험": "Danger", "과잉": "Overstock", "정상": "Normal"}
+        filter_en = []
+        for s in status_filter:
+            s = (s or "").strip()
+            if s in status_map_ko_to_en:
+                filter_en.append(status_map_ko_to_en[s])
+            elif s in status_map_en_to_ko:
+                filter_en.append(s)
+            else:
+                filter_en.append(s)
+        df = df[df["Status"].isin(filter_en)]
     if df.empty:
         return []
-    agg = df.groupby("Product_Name", as_index=False).agg(
-        Inventory=("Inventory", "first"), Safety_Stock=("Safety_Stock", "first"),
-        Status=("Status", "first"), Frozen_Money=("Frozen_Money", "sum"),
+    # 매장(또는 제품)별 집계: 현재고 합계, 안전재고 합계, 상태(최악 우선), 잠긴 돈 합계
+    agg = df.groupby(group_col, as_index=False).agg(
+        Inventory=("Inventory", "sum"),
+        Safety_Stock=("Safety_Stock", "sum"),
+        Status=("Status", "first"),
+        Frozen_Money=("Frozen_Money", "sum"),
     )
-    if "price" in df.columns:
-        price_first = df.groupby("Product_Name")["price"].first()
-        agg["price"] = agg["Product_Name"].map(price_first)
-    else:
-        agg["price"] = 0.0
+    # 상태 심각도 순으로 정렬 후 첫 값으로 매장별 대표 상태 부여 (Danger > Overstock > Normal)
+    def _worst_status(grp):
+        if grp is None or len(grp) == 0:
+            return "Normal"
+        if "Danger" in grp.values:
+            return "Danger"
+        if "Overstock" in grp.values:
+            return "Overstock"
+        return "Normal"
+
+    status_per_group = df.groupby(group_col)["Status"].apply(_worst_status)
+    agg["Status"] = agg[group_col].map(status_per_group)
+    # 현재 재고에 0.1 ~ 3.5 배 랜덤 상수 적용 (요구사항: 데이터 시뮬레이션)
+    np.random.seed(42)
+    n = len(agg)
+    mult = np.random.uniform(0.1, 3.5, size=n)
+    agg["Inventory"] = (agg["Inventory"].astype(float) * mult).round(0).astype(int).clip(lower=0)
+    # 정렬: 잠긴 돈 내림차순
     agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
     agg = agg.fillna(0)
-    return agg[["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]].to_dict(orient="records")
+    # 반환 키를 Store_Name(매장명)으로 통일
+    agg = agg.rename(columns={group_col: "Store_Name"})
+    # 상태 값을 한글로 매핑
+    status_ko_map = {"Danger": "위험", "Overstock": "과잉", "Normal": "정상"}
+    agg["Status"] = agg["Status"].map(lambda s: status_ko_map.get(str(s).strip(), str(s).strip() or "정상"))
+    # 매장명(Store_Name)만 반환. 추천 페이지 호환용으로 Product_Name 키는 제거하지 않고 Store_Name과 동일 값으로 둠.
+    out = agg[["Store_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money"]].copy()
+    out["Product_Name"] = out["Store_Name"]
+    return out.to_dict(orient="records")
 
 
 def get_inventory_critical_alerts(limit: int = 50):
@@ -1848,7 +1912,7 @@ def _ensure_comments_dir():
 
 
 def _read_inventory_comments() -> list:
-    """comments.csv 읽기. product_name, comment, author, created_at"""
+    """comments.csv 읽기. store_name(매장명), comment, author, created_at. 기존 product_name 컬럼은 store_name으로 취급."""
     if not _INVENTORY_COMMENTS_PATH.exists():
         return []
     out = []
@@ -1856,8 +1920,11 @@ def _read_inventory_comments() -> list:
         with open(_INVENTORY_COMMENTS_PATH, "r", encoding="utf-8") as f:
             r = csv.DictReader(f)
             for row in r:
+                # 매장명: store_name 우선, 없으면 product_name (기존 호환)
+                store_name = (row.get("store_name") or row.get("product_name") or "").strip()
                 out.append({
-                    "product_name": row.get("product_name", "").strip(),
+                    "store_name": store_name,
+                    "product_name": store_name,
                     "comment": row.get("comment", "").strip(),
                     "author": row.get("author", "").strip(),
                     "created_at": row.get("created_at", "").strip(),
@@ -1867,14 +1934,15 @@ def _read_inventory_comments() -> list:
     return out
 
 
-def _append_inventory_comment(product_name: str, comment: str, author: str = "") -> None:
-    """한 줄 추가 (product_name, comment, author, created_at)"""
+def _append_inventory_comment(store_name: str, comment: str, author: str = "") -> None:
+    """한 줄 추가 (store_name 매장명, comment, author, created_at)."""
     _ensure_comments_dir()
     created = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
-    row = {"product_name": product_name, "comment": comment, "author": author or "관리자", "created_at": created}
+    row = {"store_name": store_name, "comment": comment, "author": author or "관리자", "created_at": created}
     file_exists = _INVENTORY_COMMENTS_PATH.exists()
+    fieldnames = ["store_name", "comment", "author", "created_at"]
     with open(_INVENTORY_COMMENTS_PATH, "a", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["product_name", "comment", "author", "created_at"])
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         if not file_exists:
             w.writeheader()
         w.writerow(row)
@@ -1882,25 +1950,26 @@ def _append_inventory_comment(product_name: str, comment: str, author: str = "")
 
 @app.get("/api/inventory-comments")
 def api_inventory_comments():
-    """Inventory Action Center: 관리자 코멘트 목록 (product_name, comment, author, created_at)"""
+    """Inventory Action Center: 관리자 코멘트 목록 (store_name 매장명, comment, author, created_at)"""
     return {"comments": _read_inventory_comments()}
 
 
 @app.post("/api/inventory-comments")
 async def api_inventory_comments_post(request: Request):
-    """Inventory Action Center: 코멘트 추가 (body: product_name, comment, author?)"""
+    """Inventory Action Center: 코멘트 추가 (body: store_name 또는 product_name, comment, author?)"""
     try:
         body = await request.json()
     except Exception:
         body = {}
     if not isinstance(body, dict):
         body = {}
-    product_name = (body.get("product_name") or "").strip()
+    # 매장명: store_name 우선, 없으면 product_name (기존 호환)
+    store_name = (body.get("store_name") or body.get("product_name") or "").strip()
     comment = (body.get("comment") or "").strip()
     author = (body.get("author") or "").strip()
-    if not product_name or not comment:
-        return {"ok": False, "error": "product_name and comment are required"}
-    _append_inventory_comment(product_name, comment, author)
+    if not store_name or not comment:
+        return {"ok": False, "error": "store_name and comment are required"}
+    _append_inventory_comment(store_name, comment, author)
     return {"ok": True, "comments": _read_inventory_comments()}
 
 

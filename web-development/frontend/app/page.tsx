@@ -424,17 +424,17 @@ export default function Home() {
     predicted_demand?: number;
     expected_revenue?: number;
   } | null>(null);
-  /** Inventory Action Center: 재고 테이블 목록 */
+  /** Inventory Action Center: 재고 목록 (매장별). Store_Name, Inventory, Safety_Stock, Status(위험/과잉/정상), Frozen_Money */
   const [safetyStockInventoryList, setSafetyStockInventoryList] = useState<
-    { Product_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number; price?: number }[]
+    { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]
   >([]);
   const [safetyStockInventoryListLoading, setSafetyStockInventoryListLoading] = useState(false);
-  /** Status 필터: '' | 'Danger' | 'Overstock' */
+  /** 상태 필터: '' | '위험' | '과잉' (한글) */
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('');
-  /** Manager's Note: 선택된 제품명 */
-  const [selectedProductForNote, setSelectedProductForNote] = useState<string | null>(null);
+  /** 관리자 코멘트: 선택된 매장명 */
+  const [selectedStoreForNote, setSelectedStoreForNote] = useState<string | null>(null);
   const [managerNoteInput, setManagerNoteInput] = useState('');
-  const [inventoryComments, setInventoryComments] = useState<{ product_name: string; comment: string; author: string; created_at: string }[]>([]);
+  const [inventoryComments, setInventoryComments] = useState<{ store_name: string; product_name?: string; comment: string; author: string; created_at: string }[]>([]);
   const [inventoryCommentsLoading, setInventoryCommentsLoading] = useState(false);
   const [saveCommentLoading, setSaveCommentLoading] = useState(false);
   const [showDemandDashboard, setShowDemandDashboard] = useState(false);
@@ -649,10 +649,10 @@ export default function Home() {
         setInventoryComments(Array.isArray(list) ? list : []);
       }).catch(() => setInventoryComments([])),
     ]).finally(() => { setSafetyStockLoading(false); setInventoryCommentsLoading(false); });
-    // Inventory list (with current filter)
+    // 매장별 재고 목록 (한글 상태 필터: 위험, 과잉)
     const filterParam = inventoryStatusFilter ? `?status_filter=${encodeURIComponent(inventoryStatusFilter)}` : '';
     apiGet<unknown[]>(`/api/safety-stock-inventory-list${filterParam}`).then((json) => {
-      if (Array.isArray(json)) setSafetyStockInventoryList(json as { Product_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number; price?: number }[]);
+      if (Array.isArray(json)) setSafetyStockInventoryList(json as { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]);
       else setSafetyStockInventoryList([]);
     }).catch(() => setSafetyStockInventoryList([])).finally(() => setSafetyStockInventoryListLoading(false));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
@@ -1604,7 +1604,7 @@ export default function Home() {
                 <p className="text-[#6e6e73] text-center py-12">로딩 중...</p>
               ) : (
                 <>
-                  {/* 구역 1. 상단: 재고 리스크 현황 (Risk KPIs) - 빨간색 강조 */}
+                  {/* 구역 1. 상단: 재고 리스크 현황 (KPI 카드) - 한글 라벨 */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
                       <p className="text-xs font-medium text-red-700 mb-1">💰 총 잠긴 돈 (Total Frozen Money)</p>
@@ -1615,13 +1615,13 @@ export default function Home() {
                       </p>
                     </div>
                     <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700 mb-1">🚨 위험 품목 수 (Danger Count)</p>
+                      <p className="text-xs font-medium text-red-700 mb-1">🚨 위험 품목 수</p>
                       <p className="text-2xl font-bold text-red-800">
                         {safetyStockKpiData?.danger_count != null ? safetyStockKpiData.danger_count.toLocaleString() : '—'}
                       </p>
                     </div>
                     <div className="rounded-xl p-4 border-2 border-amber-200 bg-amber-50">
-                      <p className="text-xs font-medium text-amber-800 mb-1">🟡 과잉 품목 수 (Overstock Count)</p>
+                      <p className="text-xs font-medium text-amber-800 mb-1">🟡 과잉 품목 수</p>
                       <p className="text-2xl font-bold text-amber-900">
                         {safetyStockKpiData?.overstock_count != null ? safetyStockKpiData.overstock_count.toLocaleString() : '—'}
                       </p>
@@ -1650,16 +1650,16 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 구역 2 & 3: 좌측 재고 테이블 · 우측 관리자 코멘트 */}
+                  {/* 구역 2 & 3: 좌측 매장별 재고 막대 그래프 · 우측 관리자 코멘트 */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* 좌측: 상세 재고 테이블 (Inventory Grid) */}
+                    {/* 좌측: 매장별 재고 현황 — 가로형 막대 그래프 (재고 상태별 색상) */}
                     <div className="lg:col-span-2 rounded-xl border border-gray-200 overflow-hidden bg-[#fafafa]">
                       <div className="px-4 py-3 border-b border-gray-200 bg-white flex flex-wrap items-center gap-3">
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-[#1d1d1f]">상세 재고 테이블</h3>
+                          <h3 className="text-sm font-semibold text-[#1d1d1f]">매장별 재고 현황</h3>
                           <p className="text-xs text-[#86868b] mt-0.5">
-                            제품명 · 현재고 · 안전재고 · 상태 · 잠긴 돈 | 
-                            <span className="ml-1 text-[10px]">데이터: SQL (Inventory Optimization 파이프라인) | 정렬: Frozen Money 내림차순</span>
+                            매장명 · 현재고 기준 가로형 막대 | 재고 상태에 따라 색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) |
+                            <span className="ml-1 text-[10px]">데이터: SQL (Inventory Optimization 파이프라인) | 정렬: 잠긴 돈 내림차순</span>
                           </p>
                         </div>
                         <select
@@ -1668,75 +1668,67 @@ export default function Home() {
                           className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] shrink-0"
                         >
                           <option value="">전체</option>
-                          <option value="Danger">Danger만</option>
-                          <option value="Overstock">Overstock만</option>
+                          <option value="위험">위험만</option>
+                          <option value="과잉">과잉만</option>
                         </select>
                       </div>
-                      <div className="overflow-auto" style={{ maxHeight: '420px' }}>
+                      <div className="p-4 overflow-auto" style={{ maxHeight: '420px' }}>
                         {safetyStockInventoryListLoading ? (
                           <p className="text-xs text-[#86868b] py-8 text-center">재고 목록 불러오는 중…</p>
+                        ) : safetyStockInventoryList.length === 0 ? (
+                          <p className="text-xs text-[#86868b] py-8 text-center">데이터 없음</p>
                         ) : (
-                          <table className="w-full text-sm">
-                            <thead className="bg-[#f5f5f7] sticky top-0">
-                              <tr className="text-[#6e6e73] text-left">
-                                <th className="px-3 py-2 font-medium">제품명</th>
-                                <th className="px-3 py-2 font-medium text-right">현재고</th>
-                                <th className="px-3 py-2 font-medium text-right">안전재고</th>
-                                <th className="px-3 py-2 font-medium">상태</th>
-                                <th className="px-3 py-2 font-medium text-right">잠긴 돈</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {safetyStockInventoryList.length === 0 ? (
-                                <tr>
-                                  <td colSpan={5} className="px-3 py-8 text-center text-[#86868b]">데이터 없음</td>
-                                </tr>
-                              ) : (
-                                safetyStockInventoryList.map((row, i) => {
-                                  const status = (row.Status || '').trim();
-                                  const isDanger = status === 'Danger';
-                                  const isOverstock = status === 'Overstock';
-                                  const statusCls = isDanger ? 'text-red-600 font-semibold' : isOverstock ? 'text-amber-600 font-semibold' : 'text-[#1d1d1f]';
-                                  return (
-                                    <tr
-                                      key={`${row.Product_Name}-${i}`}
-                                      className={`border-t border-gray-100 hover:bg-white ${selectedProductForNote === row.Product_Name ? 'bg-blue-50' : ''}`}
-                                      onClick={() => setSelectedProductForNote((prev) => (prev === row.Product_Name ? null : row.Product_Name))}
-                                    >
-                                      <td className="px-3 py-2 text-[#1d1d1f]">{row.Product_Name}</td>
-                                      <td className="px-3 py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
-                                      <td className="px-3 py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
-                                      <td className={`px-3 py-2 ${statusCls}`}>{status || '—'}</td>
-                                      <td className="px-3 py-2 text-right text-[#1d1d1f]">₩{Number(row.Frozen_Money).toLocaleString()}</td>
-                                    </tr>
-                                  );
-                                })
-                              )}
-                            </tbody>
-                          </table>
+                          <div className="w-full" style={{ minHeight: '320px' }}>
+                            <ResponsiveContainer width="100%" height={Math.max(320, Math.min(400, safetyStockInventoryList.length * 28))}>
+                              <BarChart
+                                layout="vertical"
+                                data={safetyStockInventoryList.map((row) => ({
+                                  name: row.Store_Name || '—',
+                                  현재고: Number(row.Inventory),
+                                  상태: row.Status || '정상',
+                                }))}
+                                margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                                <XAxis type="number" tickFormatter={(v) => v.toLocaleString()} />
+                                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                                <Tooltip formatter={(value: number) => [value.toLocaleString(), '현재고']} labelFormatter={(label) => `매장: ${label}`} />
+                                <Bar dataKey="현재고" radius={[0, 4, 4, 0]} isAnimationActive={true}>
+                                  {safetyStockInventoryList.map((row, i) => {
+                                    const status = (row.Status || '').trim();
+                                    let fill = '#3b82f6';
+                                    if (status === '위험') fill = '#dc2626';
+                                    else if (status === '과잉') fill = '#f59e0b';
+                                    else if (status === '정상') fill = '#22c55e';
+                                    return <Cell key={`cell-${i}`} fill={fill} />;
+                                  })}
+                                </Bar>
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    {/* 우측: 관리자 코멘트 (Manager's Note) */}
+                    {/* 우측: 관리자 코멘트 (매장 선택 후 메모 저장) */}
                     <div className="rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200 bg-[#f5f5f7]">
                         <h3 className="text-sm font-semibold text-[#1d1d1f]">관리자 코멘트</h3>
                         <p className="text-xs text-[#86868b] mt-0.5">
-                          제품 선택 후 메모 저장 → 
+                          매장 선택 후 메모 저장 →
                           <span className="ml-1 text-[10px]">backend/data/inventory_comments.csv (재시작 후에도 유지)</span>
                         </p>
                       </div>
                       <div className="p-4 flex-1 flex flex-col gap-3 min-h-0">
                         <div>
-                          <label className="block text-xs font-medium text-[#6e6e73] mb-1">제품 선택</label>
+                          <label className="block text-xs font-medium text-[#6e6e73] mb-1">매장 선택</label>
                           <select
-                            value={selectedProductForNote ?? ''}
-                            onChange={(e) => { const v = e.target.value; setSelectedProductForNote(v || null); }}
+                            value={selectedStoreForNote ?? ''}
+                            onChange={(e) => { const v = e.target.value; setSelectedStoreForNote(v || null); }}
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3]"
                           >
                             <option value="">선택하세요</option>
-                            {Array.from(new Set(safetyStockInventoryList.map((r) => r.Product_Name))).sort().map((name) => (
+                            {Array.from(new Set(safetyStockInventoryList.map((r) => r.Store_Name))).sort().map((name) => (
                               <option key={name} value={name}>{name}</option>
                             ))}
                           </select>
@@ -1753,16 +1745,15 @@ export default function Home() {
                         </div>
                         <button
                           type="button"
-                          disabled={!selectedProductForNote?.trim() || !managerNoteInput.trim() || saveCommentLoading}
+                          disabled={!selectedStoreForNote?.trim() || !managerNoteInput.trim() || saveCommentLoading}
                           onClick={async () => {
-                            if (!selectedProductForNote?.trim() || !managerNoteInput.trim()) return;
+                            if (!selectedStoreForNote?.trim() || !managerNoteInput.trim()) return;
                             setSaveCommentLoading(true);
-                            // 상대경로 사용 → Next.js rewrites로 백엔드 전달. CORS 회피.
                             try {
                               const res = await fetch('/api/inventory-comments', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ product_name: selectedProductForNote, comment: managerNoteInput, author: '관리자' }),
+                                body: JSON.stringify({ store_name: selectedStoreForNote, comment: managerNoteInput, author: '관리자' }),
                               });
                               const data = await res.json();
                               if (data?.comments) setInventoryComments(data.comments);
@@ -1785,7 +1776,7 @@ export default function Home() {
                             <ul className="space-y-2">
                               {inventoryComments.map((c, i) => (
                                 <li key={i} className="text-xs p-2 rounded-lg bg-gray-50 border border-gray-100">
-                                  <span className="font-medium text-[#1d1d1f]">{c.product_name}</span>
+                                  <span className="font-medium text-[#1d1d1f]">{(c.store_name || c.product_name) || '—'}</span>
                                   <span className="text-[#86868b] ml-1">· {c.created_at} {c.author ? `(${c.author})` : ''}</span>
                                   <p className="mt-1 text-[#1d1d1f]">{c.comment}</p>
                                 </li>
