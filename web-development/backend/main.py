@@ -30,8 +30,10 @@ from pathlib import Path
 import importlib.util
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import time
 import sys
 import types
+import numpy as np
 import sqlite3
 import csv
 import io
@@ -378,6 +380,437 @@ if "load_sales_data" not in sys.modules or sys.modules["load_sales_data"] is Non
     sys.modules["load_sales_data"] = _load_sales_data_shim
 
 
+# ---------------------------------------------------------------------------
+# [Inventory Optimization 통합] 안전재고 대시보드 로직 (기존 Inventory Optimization.py 내용)
+# ---------------------------------------------------------------------------
+_INV_DEFAULT_PRODUCT = "MacBook Pro 16-inch"
+_INV_START_QUARTER = pd.Period("2020Q1", freq="Q")
+_INV_FORECAST_QUARTERS = 6
+_INV_FORECAST_CACHE_TTL_SEC = 300
+_ARIMA_MODEL_PATH = _MODEL_SERVER / "03.prediction model" / "arima_model.joblib"
+if not _ARIMA_MODEL_PATH.exists():
+    _ARIMA_MODEL_PATH = _MODEL_SERVER / "prediction model" / "arima_model.joblib"
+_arima_model_cache: Any = None
+_INV_SIX_CONTINENTS = ["Africa", "Asia", "Europe", "North America", "Oceania", "South America"]
+_INV_COUNTRY_TO_CONTINENT = {
+    "United States": "North America", "Canada": "North America", "Mexico": "North America",
+    "United Kingdom": "Europe", "France": "Europe", "Germany": "Europe", "Austria": "Europe",
+    "Italy": "Europe", "Spain": "Europe", "Netherlands": "Europe", "Switzerland": "Europe",
+    "Japan": "Asia", "China": "Asia", "South Korea": "Asia", "Singapore": "Asia",
+    "Hong Kong": "Asia", "Macau": "Asia", "India": "Asia", "Thailand": "Asia",
+    "Taiwan": "Asia", "UAE": "Asia",
+    "Australia": "Oceania", "New Zealand": "Oceania",
+    "Colombia": "South America", "Brazil": "South America", "Argentina": "South America",
+}
+_inv_cache_forecast_chart: Optional[dict] = None
+_inv_cache_forecast_chart_time: float = 0.0
+
+
+def _inv_load_arima_model():
+    global _arima_model_cache
+    if not _ARIMA_MODEL_PATH.exists():
+        return None
+    if _arima_model_cache is not None:
+        return _arima_model_cache
+    try:
+        import joblib
+        _arima_model_cache = joblib.load(_ARIMA_MODEL_PATH)
+        return _arima_model_cache
+    except Exception:
+        return None
+
+
+def _inv_run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    cols_to_remove = [
+        "Inventory", "Frozen_Money", "Safety_Stock", "Safety_Stock_x", "Safety_Stock_y",
+        "Status", "Simulated_Sales", "Recovered_Money",
+    ]
+    df = df.drop(columns=[c for c in cols_to_remove if c in df.columns])
+    if "Product_Name" not in df.columns or "quantity" not in df.columns:
+        return df
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
+    product_stats = df.groupby("Product_Name")["quantity"].agg(["mean", "std"]).reset_index()
+    product_stats.fillna(0, inplace=True)
+    np.random.seed(99)
+    noise_factor = np.random.uniform(0.8, 1.5, size=len(product_stats))
+    base_safety = product_stats["mean"] + 2 * product_stats["std"]
+    product_stats["Safety_Stock"] = np.ceil(base_safety * noise_factor).astype(int)
+    df = df.merge(product_stats[["Product_Name", "Safety_Stock"]], on="Product_Name", how="left")
+    np.random.seed(42)
+    df["Inventory"] = df["Safety_Stock"] + df["quantity"] + np.random.randint(0, 5, size=len(df))
+    target_products = ["MacBook Pro 16-inch", "Mac Studio", "Apple Watch Ultra", "iPad Pro 12.9-inch", "iMac 24-inch"]
+    mask_over = df["Product_Name"].isin(target_products)
+    df.loc[mask_over, "Inventory"] = df.loc[mask_over, "Safety_Stock"] * 4
+    conditions = [
+        df["Inventory"] < df["Safety_Stock"],
+        df["Inventory"] > df["Safety_Stock"] * 3,
+        df["Inventory"] >= df["Safety_Stock"],
+    ]
+    choices = ["Danger", "Overstock", "Normal"]
+    df["Status"] = np.select(conditions, choices, default="Normal")
+    if "price" in df.columns:
+        price = pd.to_numeric(df["price"], errors="coerce").fillna(0)
+        df["Frozen_Money"] = ((df["Inventory"] - df["quantity"]) * price).clip(lower=0)
+    else:
+        df["Frozen_Money"] = 0
+    return df
+
+
+def get_safety_stock_summary():
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return {"statuses": [], "total_count": 0}
+    df = _inv_run_inventory_pipeline(df)
+    if df is None or df.empty or "Status" not in df.columns:
+        return {"statuses": [], "total_count": 0}
+    status_counts = df["Status"].value_counts().reset_index()
+    status_counts.columns = ["status", "count"]
+    statuses = [{"status": str(row["status"]).strip() if pd.notna(row["status"]) else "", "count": int(row["count"])} for _, row in status_counts.iterrows()]
+    total_count = sum(s["count"] for s in statuses)
+    return {"statuses": statuses, "total_count": total_count}
+
+
+def get_kpi_summary(target_product: Optional[str] = None):
+    product = (target_product or "").strip() or _INV_DEFAULT_PRODUCT
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return {"total_frozen_money": 0.0, "danger_count": 0, "overstock_count": 0, "predicted_demand": 0, "expected_revenue": 0.0}
+    df = _inv_run_inventory_pipeline(df)
+    if df is None or df.empty:
+        return {"total_frozen_money": 0.0, "danger_count": 0, "overstock_count": 0, "predicted_demand": 0, "expected_revenue": 0.0}
+    total_frozen = float(df["Frozen_Money"].sum()) if "Frozen_Money" in df.columns else 0.0
+    danger_count = int((df["Status"] == "Danger").sum()) if "Status" in df.columns else 0
+    overstock_count = int((df["Status"] == "Overstock").sum()) if "Status" in df.columns else 0
+    predicted_demand, expected_revenue = 0, 0.0
+    arima_model = _inv_load_arima_model()
+    if arima_model is not None and "sale_date" in df.columns and "quantity" in df.columns:
+        try:
+            if hasattr(arima_model, "forecast"):
+                fc = arima_model.forecast(steps=1)
+                total_2025 = float(fc[0]) if hasattr(fc, "__getitem__") else float(fc)
+            elif hasattr(arima_model, "get_forecast"):
+                fc = arima_model.get_forecast(steps=1)
+                total_2025 = float(fc.predicted_mean.iloc[0])
+            else:
+                total_2025 = 0.0
+            total_2025 = max(0.0, total_2025)
+            d = df.copy()
+            d["sale_date"] = pd.to_datetime(d["sale_date"], errors="coerce")
+            d = d.dropna(subset=["sale_date"])
+            d["quarter"] = d["sale_date"].dt.to_period("Q")
+            d["quantity"] = pd.to_numeric(d["quantity"], errors="coerce").fillna(0)
+            split_quarter = d["sale_date"].max().to_period("Q")
+            last_4_end = split_quarter
+            last_4_start = last_4_end - 3
+            total_4 = d[(d["quarter"] >= last_4_start) & (d["quarter"] <= last_4_end)].groupby("quarter")["quantity"].sum().sum()
+            product_df = d[d["Product_Name"].astype(str).str.strip() == product]
+            product_4 = product_df[(product_df["quarter"] >= last_4_start) & (product_df["quarter"] <= last_4_end)].groupby("quarter")["quantity"].sum().sum() if not product_df.empty else 0.0
+            share = float(product_4) / float(total_4) if total_4 and total_4 > 0 else 0.0
+            product_2025 = total_2025 * share
+            predicted_demand = int(round(product_2025 / float(_INV_FORECAST_QUARTERS)))
+            if "price" in df.columns:
+                target_price = df[df["Product_Name"].astype(str).str.strip() == product]["price"]
+                target_price = pd.to_numeric(target_price, errors="coerce").fillna(0)
+                price_val = float(target_price.iloc[0]) if len(target_price) else 0.0
+                expected_revenue = predicted_demand * price_val
+        except Exception:
+            pass
+    return {"total_frozen_money": total_frozen, "danger_count": danger_count, "overstock_count": overstock_count, "predicted_demand": predicted_demand, "expected_revenue": expected_revenue}
+
+
+def get_inventory_list(status_filter: Optional[list] = None):
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return []
+    df = _inv_run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns:
+        return []
+    need = ["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money"]
+    if not all(c in df.columns for c in need):
+        return []
+    if status_filter:
+        df = df[df["Status"].isin(status_filter)]
+    if df.empty:
+        return []
+    agg = df.groupby("Product_Name", as_index=False).agg(
+        Inventory=("Inventory", "first"), Safety_Stock=("Safety_Stock", "first"),
+        Status=("Status", "first"), Frozen_Money=("Frozen_Money", "sum"),
+    )
+    if "price" in df.columns:
+        price_first = df.groupby("Product_Name")["price"].first()
+        agg["price"] = agg["Product_Name"].map(price_first)
+    else:
+        agg["price"] = 0.0
+    agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
+    agg = agg.fillna(0)
+    return agg[["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]].to_dict(orient="records")
+
+
+def get_inventory_critical_alerts(limit: int = 50):
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return {"critical_count": 0, "critical_items": []}
+    df = _inv_run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns or "Inventory" not in df.columns or "Safety_Stock" not in df.columns:
+        return {"critical_count": 0, "critical_items": []}
+    safety = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)
+    inv = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0)
+    df = df.copy()
+    df["Health_Index"] = np.where(safety > 0, (inv / safety) * 100.0, 0.0)
+    critical = df[df["Health_Index"] < 70].copy()
+    if critical.empty:
+        return {"critical_count": 0, "critical_items": []}
+    store_col = "Store_Name" if "Store_Name" in critical.columns else ("store_name" if "store_name" in critical.columns else None)
+    cols = ["Product_Name", "Health_Index", "Inventory", "Safety_Stock"]
+    if store_col:
+        cols = [store_col] + cols
+    for c in cols:
+        if c not in critical.columns:
+            critical[c] = "" if c == store_col else 0
+    critical = critical[cols].drop_duplicates().sort_values("Health_Index")
+    critical_count = int(critical.shape[0])
+    critical = critical.head(limit)
+    critical_items = []
+    for _, row in critical.iterrows():
+        item = {
+            "Product_Name": str(row["Product_Name"]).strip() if pd.notna(row["Product_Name"]) else "",
+            "Health_Index": round(float(row["Health_Index"]), 1),
+            "Inventory": int(round(float(row["Inventory"]), 0)),
+            "Safety_Stock": int(round(float(row["Safety_Stock"]), 0)),
+        }
+        if store_col:
+            item["Store_Name"] = str(row[store_col]).strip() if pd.notna(row[store_col]) else ""
+        critical_items.append(item)
+    return {"critical_count": critical_count, "critical_items": critical_items}
+
+
+def get_inventory_health_for_recommendation():
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return []
+    df = _inv_run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns or "Inventory" not in df.columns or "Safety_Stock" not in df.columns:
+        return []
+    safety = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)
+    inv = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0)
+    df = df.copy()
+    df["Health_Index"] = np.where(safety > 0, (inv / safety) * 100.0, 0.0)
+    agg = df.groupby("Product_Name", as_index=False)["Health_Index"].first()
+    return [{"product_name": str(row["Product_Name"]).strip() if pd.notna(row["Product_Name"]) else "", "health_index": round(float(row["Health_Index"]), 1)} for _, row in agg.iterrows()]
+
+
+def _inv_quarter_label(q) -> str:
+    return f"{q.year}-Q{q.quarter}"
+
+
+def _inv_get_forecast_chart_with_arima(df: pd.DataFrame, target_product: str, train_df: pd.DataFrame, quarterly_actual: pd.Series, split_quarter) -> Optional[list]:
+    arima_model = _inv_load_arima_model()
+    if arima_model is None:
+        return None
+    try:
+        if hasattr(arima_model, "forecast"):
+            fc = arima_model.forecast(steps=1)
+            total_2025 = float(fc[0]) if hasattr(fc, "__getitem__") else float(fc)
+        elif hasattr(arima_model, "get_forecast"):
+            fc = arima_model.get_forecast(steps=1)
+            total_2025 = float(fc.predicted_mean.iloc[0])
+        else:
+            return None
+    except Exception:
+        return None
+    total_2025 = max(0.0, total_2025)
+    df = df.copy()
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+    df = df.dropna(subset=["sale_date"])
+    df["quarter"] = df["sale_date"].dt.to_period("Q")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
+    last_4_end, last_4_start = split_quarter, split_quarter - 3
+    total_4 = df[(df["quarter"] >= last_4_start) & (df["quarter"] <= last_4_end)].groupby("quarter")["quantity"].sum().sum()
+    product_4 = quarterly_actual[(quarterly_actual.index >= last_4_start) & (quarterly_actual.index <= last_4_end)].sum() if not quarterly_actual.empty else 0.0
+    share = float(product_4) / float(total_4) if total_4 and total_4 > 0 else 0.0
+    product_2025 = total_2025 * share
+    forecast_list = []
+    for i in range(1, _INV_FORECAST_QUARTERS + 1):
+        q = split_quarter + i
+        yhat = max(0.0, product_2025 / float(_INV_FORECAST_QUARTERS))
+        yhat_lower, yhat_upper = max(0.0, yhat * 0.85), yhat * 1.15
+        sales_label = f"예측 판매량: {int(round(yhat)):,}대 (ARIMA)"
+        stock_label = f"권장 재고: {int(round(yhat_upper)):,}대 (상한선 기준)"
+        store_stock = round(yhat * 1.125, 2)
+        forecast_list.append({
+            "month": _inv_quarter_label(q), "yhat": round(yhat, 2), "yhat_lower": round(yhat_lower, 2), "yhat_upper": round(yhat_upper, 2),
+            "store_stock_quantity": store_stock, "insight": {"sales_label": sales_label, "stock_label": stock_label, "message": "적정 재고 유지"},
+        })
+    return forecast_list
+
+
+def get_demand_forecast_chart_data(product_name: Optional[str] = None):
+    global _inv_cache_forecast_chart, _inv_cache_forecast_chart_time
+    target_product = (product_name or "").strip() or _INV_DEFAULT_PRODUCT
+    use_cache = not (product_name or "").strip()
+    now = time.time()
+    if use_cache and _inv_cache_forecast_chart is not None and (now - _inv_cache_forecast_chart_time) < _INV_FORECAST_CACHE_TTL_SEC:
+        return _inv_cache_forecast_chart
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty or "Product_Name" not in df.columns or "quantity" not in df.columns or "sale_date" not in df.columns:
+        return {"product_name": target_product, "chart_data": []}
+    df = df.copy()
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+    df = df.dropna(subset=["sale_date"])
+    agg_cols = ["quantity"]
+    if "store_stock_quantity" in df.columns:
+        agg_cols.append("store_stock_quantity")
+    train_df = df[df["Product_Name"] == target_product].groupby("sale_date")[agg_cols].sum().reset_index()
+    train_df.columns = ["ds", "y"] + (["store_stock"] if "store_stock_quantity" in df.columns else [])
+    if len(train_df) < 2:
+        return {"product_name": target_product, "chart_data": []}
+    train_df["quarter"] = train_df["ds"].dt.to_period("Q")
+    quarterly_actual = train_df.groupby("quarter")["y"].sum().sort_index()
+    quarterly_store = train_df.groupby("quarter")["store_stock"].sum().sort_index() if "store_stock" in train_df.columns else None
+    split_quarter = train_df["ds"].max().to_period("Q")
+    chart_data = []
+    if not quarterly_actual.empty:
+        for q in quarterly_actual.index:
+            if q < _INV_START_QUARTER or q > split_quarter:
+                continue
+            actual = float(quarterly_actual.loc[q])
+            row = {"month": _inv_quarter_label(q), "yhat": round(actual, 2), "yhat_lower": round(actual, 2), "yhat_upper": round(actual, 2), "insight": {"sales_label": f"판매 실적: {int(round(actual)):,}대", "stock_label": "당분기 재고 기준 (실적)", "message": "과거 실적"}}
+            if quarterly_store is not None and q in quarterly_store.index:
+                row["store_stock_quantity"] = round(float(quarterly_store.loc[q]), 2)
+            chart_data.append(row)
+    arima_forecast = _inv_get_forecast_chart_with_arima(df, target_product, train_df, quarterly_actual, split_quarter)
+    if arima_forecast is not None:
+        chart_data.extend(arima_forecast)
+        result = {"product_name": target_product, "chart_data": chart_data}
+        if use_cache:
+            _inv_cache_forecast_chart = result
+            _inv_cache_forecast_chart_time = time.time()
+        return result
+    return {"product_name": target_product, "chart_data": chart_data or []}
+
+
+def get_sales_by_store_six_month(category: str, continent: Optional[str] = None, country: Optional[str] = None, store_name: Optional[str] = None):
+    def _norm(s):
+        return (str(s).strip() if s is not None and str(s).strip() else "(Unknown)")
+    _empty_opts = {"continents": [], "countries": [], "stores": []}
+    if not (category and str(category).strip()):
+        return {"category": "", "periods": [], "data": [], "store_names": [], "store_continents": {}, "filter_options": _empty_opts}
+    category = str(category).strip()
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return {"category": category, "periods": [], "data": [], "store_names": [], "store_continents": {}, "filter_options": _empty_opts}
+    need = ["sale_date", "quantity", "Store_Name", "category_name"]
+    if not all(c in df.columns for c in need):
+        return {"category": category, "periods": [], "data": [], "store_names": [], "store_continents": {}, "filter_options": _empty_opts}
+    df = df.copy()
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+    df = df.dropna(subset=["sale_date"])
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
+    df = df[df["category_name"].astype(str).str.strip().str.lower() == category.lower()]
+    if df.empty:
+        return {"category": category, "periods": [], "data": [], "store_names": [], "store_continents": {}, "filter_options": _empty_opts}
+    if "Country" in df.columns:
+        df["_country"] = df["Country"].astype(str).str.strip()
+        df["continent"] = df["_country"].map(lambda c: _INV_COUNTRY_TO_CONTINENT.get(c, "Other"))
+    else:
+        df["_country"] = ""
+        df["continent"] = "Other"
+    present_continents = set(df["continent"].dropna().astype(str).unique().tolist())
+    continents_ordered = [c for c in _INV_SIX_CONTINENTS if c in present_continents]
+    if "Other" in present_continents:
+        continents_ordered.append("Other")
+    filter_options = {"continents": continents_ordered, "countries": sorted(df["_country"].dropna().astype(str).replace("", pd.NA).dropna().unique().tolist()), "stores": sorted({_norm(s) for s in df["Store_Name"].unique()})}
+    store_countries = {}
+    for store in filter_options["stores"]:
+        sub = df[df["Store_Name"].apply(_norm) == store]
+        store_countries[store] = str(sub.iloc[0]["_country"]).strip() if not sub.empty and "_country" in sub.columns and pd.notna(sub.iloc[0]["_country"]) else ""
+    if continent and str(continent).strip():
+        df = df[df["continent"].astype(str).str.strip() == str(continent).strip()]
+    if country and str(country).strip():
+        df = df[df["_country"].astype(str).str.strip() == str(country).strip()]
+    if store_name and str(store_name).strip():
+        df = df[df["Store_Name"].apply(_norm) == str(store_name).strip()]
+    if df.empty:
+        return {"category": category, "periods": [], "data": [], "store_names": [], "store_continents": {}, "store_countries": store_countries, "filter_options": filter_options}
+    df["year"] = df["sale_date"].dt.year
+    df["quarter"] = (df["sale_date"].dt.month - 1) // 3 + 1
+    df["period_label"] = df["year"].astype(str) + " " + df["quarter"].astype(str) + "분기"
+    agg = df.groupby(["period_label", "Store_Name"])["quantity"].sum().reset_index()
+    periods_ordered = sorted(agg["period_label"].unique(), key=lambda p: (int(p.split()[0]), int(p.split()[1].replace("분기", ""))))
+    store_names = sorted({_norm(s) for s in agg["Store_Name"].unique()})
+    store_continents = {}
+    for store in store_names:
+        sub = df[df["Store_Name"].apply(_norm) == store]
+        store_continents[store] = str(sub.iloc[0]["continent"]).strip() if not sub.empty and pd.notna(sub.iloc[0]["continent"]) else ""
+    rows = []
+    for p in periods_ordered:
+        row = {"period": p}
+        sub = agg[agg["period_label"] == p]
+        for store in store_names:
+            q = sub[sub["Store_Name"].apply(_norm) == store]["quantity"].sum()
+            row[store] = int(q)
+        rows.append(row)
+    return {"category": category, "periods": periods_ordered, "data": rows, "store_names": store_names, "store_continents": store_continents, "store_countries": store_countries, "filter_options": filter_options}
+
+
+def get_sales_by_product(category: str, continent: Optional[str] = None, country: Optional[str] = None, store_name: Optional[str] = None, period: Optional[str] = None):
+    def _norm(s):
+        return (str(s).strip() if s is not None and str(s).strip() else "(Unknown)")
+    if not (category and str(category).strip()):
+        return {"category": category or "", "period": period, "products": []}
+    category = str(category).strip()
+    df = load_sales_dataframe() if callable(load_sales_dataframe) else None
+    if df is None or df.empty:
+        return {"category": category, "period": period, "products": []}
+    need = ["sale_date", "quantity", "category_name", "Store_Name"]
+    if not all(c in df.columns for c in need):
+        return {"category": category, "period": period, "products": []}
+    product_col = "Product_Name" if "Product_Name" in df.columns else ("product_name" if "product_name" in df.columns else None)
+    if product_col is None:
+        return {"category": category, "period": period, "products": []}
+    df = df.copy()
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
+    df = df.dropna(subset=["sale_date"])
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(0).astype(int)
+    df = df[df["category_name"].astype(str).str.strip().str.lower() == category.lower()]
+    if df.empty:
+        return {"category": category, "period": period, "products": []}
+    if "Country" in df.columns:
+        df["_country"] = df["Country"].astype(str).str.strip()
+        df["continent"] = df["_country"].map(lambda c: _INV_COUNTRY_TO_CONTINENT.get(c, "Other"))
+    else:
+        df["_country"] = ""
+        df["continent"] = "Other"
+    if continent and str(continent).strip():
+        df = df[df["continent"].astype(str).str.strip() == str(continent).strip()]
+    if country and str(country).strip():
+        df = df[df["_country"].astype(str).str.strip() == str(country).strip()]
+    if store_name and str(store_name).strip():
+        df = df[df["Store_Name"].apply(_norm) == str(store_name).strip()]
+    if period and str(period).strip():
+        df["year"] = df["sale_date"].dt.year
+        df["quarter"] = (df["sale_date"].dt.month - 1) // 3 + 1
+        df["period_label"] = df["year"].astype(str) + " " + df["quarter"].astype(str) + "분기"
+        df = df[df["period_label"].astype(str).str.strip() == str(period).strip()]
+    if df.empty:
+        return {"category": category, "period": period, "products": []}
+    id_col = "product_id" if "product_id" in df.columns else None
+    if id_col:
+        agg = df.groupby([id_col, product_col])["quantity"].sum().reset_index()
+        agg.columns = ["product_id", "product_name", "quantity"]
+    else:
+        agg = df.groupby(product_col)["quantity"].sum().reset_index()
+        agg.columns = ["product_name", "quantity"]
+        agg["product_id"] = ""
+    agg["quantity"] = agg["quantity"].astype(int)
+    agg = agg.sort_values("quantity", ascending=False).reset_index(drop=True)
+    products = [{"product_id": str(row.get("product_id", "")).strip(), "product_name": str(row.get("product_name", "")).strip(), "quantity": int(row["quantity"])} for _, row in agg.iterrows()]
+    return {"category": category, "period": period, "products": products}
+
+
 # prediction model.py 로드 (수요 대시보드 · 파이차트 · 2025 수량 예측 연동)
 # - get_sales_quantity_forecast: 2020~2024 기준 2025년 예측 판매 수량
 # - get_predicted_demand_by_product: product_id별 2025년 예측 수요
@@ -447,34 +880,6 @@ try: # 모듈 로드를 시도합니다.
             get_store_performance_grade = getattr(_sales_module, "get_store_performance_grade", None)
 except Exception as e: # 독립된 if문: 만약 위 과정에서 에러가 나면 실행됩니다.
     print(f"[오류 발생] 매출 분석 파일 로드 실패: {e}") # 에러 메시지를 출력합니다.
-
-# Inventory Optimization.py 로드 (안전재고 대시보드 연동)
-# - get_safety_stock_summary: 재고 상태별 건수 (Status: Danger/Normal/Overstock)
-# - get_demand_forecast_chart_data: 수요 예측 & 적정 재고 메인 차트
-get_safety_stock_summary = None
-get_demand_forecast_chart_data = None
-get_sales_by_store_six_month = None
-get_sales_by_product = None
-get_kpi_summary = None
-get_inventory_list = None
-get_inventory_critical_alerts = None
-get_inventory_health_for_recommendation = None
-_inventory_file = _model_path("04.Sales analysis", "05.Inventory Optimization", "Inventory Optimization") / "Inventory Optimization.py"
-if _inventory_file.exists():
-    try:
-        _spec_inv = importlib.util.spec_from_file_location("inventory_optimization", _inventory_file)
-        _inv_module = importlib.util.module_from_spec(_spec_inv)
-        _spec_inv.loader.exec_module(_inv_module)
-        get_safety_stock_summary = getattr(_inv_module, "get_safety_stock_summary", None)
-        get_demand_forecast_chart_data = getattr(_inv_module, "get_demand_forecast_chart_data", None)
-        get_sales_by_store_six_month = getattr(_inv_module, "get_sales_by_store_six_month", None)
-        get_sales_by_product = getattr(_inv_module, "get_sales_by_product", None)
-        get_kpi_summary = getattr(_inv_module, "get_kpi_summary", None)
-        get_inventory_list = getattr(_inv_module, "get_inventory_list", None)
-        get_inventory_critical_alerts = getattr(_inv_module, "get_inventory_critical_alerts", None)
-        get_inventory_health_for_recommendation = getattr(_inv_module, "get_inventory_health_for_recommendation", None)
-    except Exception as e:
-        print(f"[Apple Retail API] Inventory Optimization.py 로드 실패: {e}")
 
 # -----------------------------------------------------------------------------
 # Real-time execution and performance dashboard.py 로드 (추천·성장 전략 대시보드)
@@ -1297,7 +1702,7 @@ def api_data_source():
 
 @app.get("/api/safety-stock")
 def api_safety_stock():
-    """안전재고 대시보드용: 재고 상태별 건수 (Inventory Optimization.py 연동)"""
+    """안전재고 대시보드용: 재고 상태별 건수 (main.py 통합 로직)"""
     if get_safety_stock_summary is None:
         return {"statuses": [], "total_count": 0}
     return get_safety_stock_summary()
