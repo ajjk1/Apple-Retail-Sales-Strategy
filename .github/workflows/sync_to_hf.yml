@@ -1,20 +1,28 @@
-name: Sync to Hugging Face hub # 워크플로우의 이름입니다.
-on: # 어떤 이벤트가 발생했을 때 실행할지 정의합니다.
-  push: # 코드가 push 되었을 때 실행합니다.
-    branches: [main] # main 브랜치에 변화가 있을 때만 작동합니다.
-  workflow_dispatch: # 버튼을 눌러서 수동으로도 실행할 수 있게 해주는 기능입니다.
+name: Sync to Hugging Face hub # 워크플로우 이름
+on:
+  push:
+    branches: [main] # main 브랜치에 push될 때 실행
+  workflow_dispatch: # 수동 실행 버튼 추가
 
-jobs: # 실행할 작업 단위입니다.
-  sync-to-hub: # 작업의 ID입니다.
-    runs-on: ubuntu-latest # 리눅스 환경에서 실행합니다.
-    steps: # 세부 실행 단계입니다.
-      - uses: actions/checkout@v3 # 현재 리포지토리의 코드를 가져옵니다.
+jobs:
+  build:
+    runs-on: ubuntu-latest # 실행 환경
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3 # 코드 가져오기
         with:
-          fetch-depth: 0 # 모든 커밋 히스토리를 가져옵니다.
-          lfs: true # arima_model.joblib 같은 대용량 파일을 위해 LFS를 활성화합니다.
-          
-      - name: Push to hub # 허깅페이스로 밀어넣는 단계 이름입니다.
+          fetch-depth: 0
+          lfs: true # 대용량 파일 처리를 위해 true 설정
+
+      - name: Push to hub
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 깃허브 Secrets에 저장한 토큰을 불러옵니다.
-        # 아래 명령어가 실제로 깃허브 코드를 허깅페이스로 복사합니다.
-        run: git push --force https://ajjk1:$HF_TOKEN@huggingface.co/spaces/ajjk1/apple-sales-api main
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 깃허브 비밀값에서 토큰 로드
+        run: |
+          # 1. 10MB가 넘는 폴더를 전송 대상에서 강제로 제외하는 독립된 if문 로직
+          if [ -d "model-server/00.old" ]; then
+            rm -rf model-server/00.old
+            echo "대용량 백업 폴더를 전송 목록에서 삭제했습니다."
+          fi
+          
+          # 2. 허깅페이스로 강제 푸시 (이 명령어가 실제 전송을 담당합니다)
+          git push --force https://ajjk1:$HF_TOKEN@huggingface.co/spaces/ajjk1/apple-sales-api main
