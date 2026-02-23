@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apple Retail Sales Dashboard</title>
+  <meta name="description" content="Apple Retail Sales ??쒕낫??(?⑥씪 HTML)" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <link rel="preconnect" href="https://unpkg.com" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: rgba(255, 255, 255, 0.06);
+      --panel2: rgba(255, 255, 255, 0.09);
+      --text: #e8eefc;
+      --muted: rgba(232, 238, 252, 0.7);
+      --border: rgba(255, 255, 255, 0.12);
+      --accent: #60a5fa;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --bad: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 800px at 20% 0%, rgba(96, 165, 250, 0.18), transparent 60%),
+                  radial-gradient(900px 700px at 90% 10%, rgba(52, 211, 153, 0.12), transparent 55%),
+                  var(--bg);
+      color: var(--text);
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 22px 16px 40px; }
+    .topbar {
+      display: flex; gap: 12px; align-items: center; justify-content: space-between;
+      padding: 14px 14px; border: 1px solid var(--border); border-radius: 14px;
+      background: linear-gradient(180deg, var(--panel2), var(--panel));
+      backdrop-filter: blur(8px);
+    }
+    .title {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .title h1 { margin: 0; font-size: 18px; letter-spacing: 0.2px; }
+    .title .sub { margin: 0; color: var(--muted); font-size: 12px; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+    .controls input {
+      width: 340px; max-width: 70vw;
+      padding: 10px 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: rgba(0,0,0,0.25); color: var(--text);
+      outline: none;
+    }
+    .btn {
+      padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+      background: rgba(96, 165, 250, 0.16);
+      color: var(--text); cursor: pointer;
+    }
+    .btn:active { transform: translateY(1px); }
+    .pill {
+      padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--muted);
+      font-size: 12px;
+      display: inline-flex; gap: 6px; align-items: center;
+    }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; margin-top: 12px; }
+    .card {
+      grid-column: span 12;
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, var(--panel2), var(--panel));
+      backdrop-filter: blur(8px);
+      overflow: hidden;
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      letter-spacing: 0.2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .muted { color: var(--muted); font-size: 12px; }
+    .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .kpi {
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .kpi .label { color: var(--muted); font-size: 12px; }
+    .kpi .value { font-size: 20px; font-weight: 700; margin-top: 6px; }
+    .row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+    .col-6 { grid-column: span 12; }
+    .col-4 { grid-column: span 12; }
+    .col-8 { grid-column: span 12; }
+    @media (min-width: 980px) {
+      .col-6 { grid-column: span 6; }
+      .col-4 { grid-column: span 4; }
+      .col-8 { grid-column: span 8; }
+      .card { padding: 16px; }
+      .title h1 { font-size: 20px; }
+    }
+    .canvas-wrap { height: 320px; }
+    .canvas-wrap.small { height: 260px; }
+    canvas { width: 100% !important; height: 100% !important; }
+    #map { width: 100%; height: 360px; border-radius: 14px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      font-size: 12px;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .two-col { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    @media (min-width: 980px) { .two-col { grid-template-columns: 1fr 1fr; } }
+    .note {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px dashed rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.14);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .error {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(251, 113, 133, 0.35);
+      background: rgba(251, 113, 133, 0.12);
+      color: rgba(255,255,255,0.95);
+      font-size: 12px;
+    }
+    .ok {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(52, 211, 153, 0.30);
+      background: rgba(52, 211, 153, 0.10);
+      color: rgba(255,255,255,0.95);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="title">
+        <h1>Apple Retail Sales Dashboard</h1>
+        <p class="sub">?⑥씪 HTML 쨌 FastAPI ?곗씠???곕룞 쨌 吏??李⑦듃/?덉륫</p>
+      </div>
+      <div class="controls">
+        <span id="statusPill" class="pill">?곌껐 ?뺤씤 以묅?/span>
+        <input id="baseUrl" placeholder="API Base URL (湲곕낯: ?꾩옱 ?몄뒪???먮뒗 http://localhost:8000)" />
+        <button class="btn" id="refreshBtn">?덈줈怨좎묠</button>
+      </div>
+    </div>
+
+    <div id="message" class="note"></div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>
+          <span>?붿빟</span>
+          <span class="muted" id="lastUpdated">-</span>
+        </h2>
+        <div class="kpi-row">
+          <div class="kpi">
+            <div class="label">珥?留ㅼ텧</div>
+            <div class="value" id="kpiTotalSales">-</div>
+          </div>
+          <div class="kpi">
+            <div class="label">珥?嫄곕옒 ??/div>
+            <div class="value" id="kpiTx">-</div>
+          </div>
+          <div class="kpi">
+            <div class="label">?됯퇏 二쇰Ц 湲덉븸</div>
+            <div class="value" id="kpiAov">-</div>
+          </div>
+        </div>
+        <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+          <span class="pill" id="dataSource">?곗씠???뚯뒪: -</span>
+          <span class="pill" id="forecastMethod">?덉륫: -</span>
+        </div>
+        <div class="note" id="corsNote"></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>移댄뀒怨좊━蹂?留ㅼ텧 (Pie)</span><span class="muted">/api/apple-data</span></h2>
+        <div class="canvas-wrap"><canvas id="chartCategory"></canvas></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>援??蹂?留ㅼ텧 Top10 (Bar)</span><span class="muted">/api/apple-data</span></h2>
+        <div class="canvas-wrap"><canvas id="chartCountry"></canvas></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>?ш퀬 ?곹깭 遺꾪룷 (Doughnut)</span><span class="muted">/api/apple-data</span></h2>
+        <div class="canvas-wrap small"><canvas id="chartInventory"></canvas></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>2020~2025 ?먮ℓ ?섎웾 (?ㅼ쟻+?덉륫)</span><span class="muted">/api/sales-quantity-forecast</span></h2>
+        <div class="canvas-wrap small"><canvas id="chartQuantity"></canvas></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>2025 ?덉긽 ?섎웾 (移댄뀒怨좊━ 諛곕텇)</span><span class="muted">/api/sales-quantity-forecast</span></h2>
+        <div class="canvas-wrap small"><canvas id="chartPredByCat"></canvas></div>
+      </div>
+
+      <div class="card col-6">
+        <h2><span>異붿쿇 ?붿빟</span><span class="muted">/api/recommendation-summary</span></h2>
+        <div class="two-col">
+          <div>
+            <div class="muted" style="margin-bottom:8px;">異붿쿇 ?곹뭹 Top 15</div>
+            <table id="recProducts"></table>
+          </div>
+          <div>
+            <div class="muted" style="margin-bottom:8px;">異붿쿇 移댄뀒怨좊━ Top 10</div>
+            <table id="recCategories"></table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span>?쒗뭹蹂?2025 ?덉륫 ?섏슂 (Top 30)</span><span class="muted">/api/predicted-demand-by-product</span></h2>
+        <div style="overflow:auto;">
+          <table id="predByProduct"></table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2><span>留ㅼ옣 吏??/span><span class="muted">/api/store-markers</span></h2>
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:12px;">
+      ?? 媛???덉젙?곸씤 ?ㅽ뻾? 諛깆뿏?쒖뿉?????섏씠吏瑜??щ뒗 寃껋엯?덈떎. <br />
+      <b>FastAPI ?ㅽ뻾</b> ??<code>http://localhost:8000/dashboard</code> 濡??묒냽?섏꽭??
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  const state = {
+    charts: {},
+    map: null,
+    mapLayer: null,
+    markers: [],
+  };
+
+  function formatNumber(n) {
+    if (n === null || n === undefined || Number.isNaN(n)) return '-';
+    try { return Number(n).toLocaleString(); } catch { return String(n); }
+  }
+
+  function formatMoneyKRW(n) {
+    if (n === null || n === undefined || Number.isNaN(n)) return '-';
+    const v = Number(n);
+    return v.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' ??;
+  }
+
+  function setPill(text, kind) {
+    const el = $('statusPill');
+    el.textContent = text;
+    el.style.borderColor = kind === 'ok' ? 'rgba(52,211,153,0.35)' : kind === 'bad' ? 'rgba(251,113,133,0.35)' : 'var(--border)';
+    el.style.background = kind === 'ok' ? 'rgba(52,211,153,0.10)' : kind === 'bad' ? 'rgba(251,113,133,0.10)' : 'rgba(255,255,255,0.06)';
+    el.style.color = kind === 'ok' ? 'rgba(255,255,255,0.95)' : kind === 'bad' ? 'rgba(255,255,255,0.95)' : 'var(--muted)';
+  }
+
+  function defaultBaseUrl() {
+    // 1) http(s)濡??쒕튃?섎뒗 寃쎌슦: 媛숈? ?ㅻ━吏??ъ슜
+    if (location && (location.protocol === 'http:' || location.protocol === 'https:')) {
+      return '';
+    }
+    // 2) file:// 濡??대㈃ CORS ?뚮Ц??吏곸젒 ?몄텧??留됲옄 ???덉뼱, 湲곕낯媛믪쓣 localhost濡???    return 'http://localhost:8000';
+  }
+
+  function normalizeBase(base) {
+    const b = (base || '').trim();
+    if (!b) return '';
+    return b.endsWith('/') ? b.slice(0, -1) : b;
+  }
+
+  async function apiGet(path, base) {
+    const trimmed = normalizeBase(base);
+    const bases = [];
+    if (location && (location.protocol === 'http:' || location.protocol === 'https:')) {
+      bases.push('');
+    }
+    if (trimmed) bases.push(trimmed);
+    bases.push('http://localhost:8000');
+    bases.push('http://127.0.0.1:8000');
+
+    for (const b of bases) {
+      const url = b ? (b + path) : path;
+      try {
+        const res = await fetch(url);
+        if (res && res.ok) return await res.json();
+      } catch (e) {
+        // ignore
+      }
+    }
+    return null;
+  }
+
+  function destroyCharts() {
+    for (const k of Object.keys(state.charts)) {
+      try { state.charts[k].destroy(); } catch {}
+    }
+    state.charts = {};
+  }
+
+  function ensureMap() {
+    if (state.map) return;
+    state.map = L.map('map', { zoomControl: true, scrollWheelZoom: true });
+    state.mapLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(state.map);
+    state.map.setView([20, 0], 2);
+  }
+
+  function clearMarkers() {
+    for (const m of state.markers) {
+      try { m.remove(); } catch {}
+    }
+    state.markers = [];
+  }
+
+  function renderTable(el, headers, rows) {
+    const thead = '<thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead>';
+    const tbody = '<tbody>' + rows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody>';
+    el.innerHTML = thead + tbody;
+  }
+
+  function palette(n) {
+    const colors = [
+      '#60a5fa', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#22d3ee', '#f97316', '#84cc16', '#e879f9', '#93c5fd'
+    ];
+    return Array.from({ length: n }, (_, i) => colors[i % colors.length]);
+  }
+
+  function renderCharts(appleData, forecast) {
+    destroyCharts();
+
+    // 移댄뀒怨좊━ Pie
+    const cat = (appleData?.sales_by_category || []).map(d => ({ label: d.category, value: d.sales }));
+    state.charts.category = new Chart($('chartCategory'), {
+      type: 'pie',
+      data: {
+        labels: cat.map(d => d.label),
+        datasets: [{ data: cat.map(d => d.value), backgroundColor: palette(cat.length) }]
+      },
+      options: {
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e8eefc' } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.label}: ${formatNumber(ctx.parsed)} ??
+            }
+          }
+        }
+      }
+    });
+
+    // 援?? Bar
+    const ctry = (appleData?.sales_by_country || []).map(d => ({ label: d.country, value: d.sales }));
+    state.charts.country = new Chart($('chartCountry'), {
+      type: 'bar',
+      data: {
+        labels: ctry.map(d => d.label),
+        datasets: [{ label: '留ㅼ텧', data: ctry.map(d => d.value), backgroundColor: 'rgba(96,165,250,0.55)', borderColor: 'rgba(96,165,250,0.9)', borderWidth: 1 }]
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: 'rgba(232,238,252,0.8)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+          y: { ticks: { color: 'rgba(232,238,252,0.8)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // ?ш퀬 Doughnut
+    const inv = (appleData?.inventory_status || []).map(d => ({ label: d.status, value: d.count }));
+    state.charts.inventory = new Chart($('chartInventory'), {
+      type: 'doughnut',
+      data: {
+        labels: inv.map(d => d.label),
+        datasets: [{ data: inv.map(d => d.value), backgroundColor: ['rgba(52,211,153,0.55)','rgba(251,191,36,0.55)','rgba(251,113,133,0.55)','rgba(96,165,250,0.55)'] }]
+      },
+      options: {
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e8eefc' } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${formatNumber(ctx.parsed)}` } }
+        }
+      }
+    });
+
+    // ?섎웾 ?쇱씤 (2020~2024 ?ㅼ쟻 + 2025 ?덉륫)
+    const yearly = (forecast?.yearly_quantity || []).slice().sort((a,b) => a.year - b.year);
+    const years = yearly.map(d => d.year);
+    const qty = yearly.map(d => d.quantity);
+    const pred2025 = Number(forecast?.predicted_quantity_2025 || 0);
+
+    const yearsAll = [...years, 2025];
+    const qtyAll = [...qty, pred2025];
+
+    state.charts.quantity = new Chart($('chartQuantity'), {
+      type: 'line',
+      data: {
+        labels: yearsAll.map(String),
+        datasets: [
+          {
+            label: '?먮ℓ ?섎웾',
+            data: qtyAll,
+            borderColor: 'rgba(52,211,153,0.9)',
+            backgroundColor: 'rgba(52,211,153,0.15)',
+            pointRadius: (ctx) => (ctx.dataIndex === yearsAll.length - 1 ? 5 : 3),
+            pointBackgroundColor: (ctx) => (ctx.dataIndex === yearsAll.length - 1 ? 'rgba(96,165,250,0.95)' : 'rgba(52,211,153,0.9)'),
+            tension: 0.25,
+            fill: true,
+          }
+        ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { color: 'rgba(232,238,252,0.8)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+          y: { ticks: { color: 'rgba(232,238,252,0.8)' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.label}?? ${formatNumber(ctx.parsed.y)} ?`
+            }
+          }
+        }
+      }
+    });
+
+    // 2025 移댄뀒怨좊━ 諛곕텇 Pie
+    const predByCat = (forecast?.predicted_2025_by_category || []).map(d => ({ label: String(d.category || '').replace(/^'+|'+$/g,''), value: d.quantity }));
+    state.charts.predByCat = new Chart($('chartPredByCat'), {
+      type: 'pie',
+      data: {
+        labels: predByCat.map(d => d.label),
+        datasets: [{ data: predByCat.map(d => d.value), backgroundColor: palette(predByCat.length) }]
+      },
+      options: {
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e8eefc' } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.label}: ${formatNumber(ctx.parsed)} ?`
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function renderRecommendationTables(rec) {
+    const prod = Array.isArray(rec?.top_products) ? rec.top_products : [];
+    const cat = Array.isArray(rec?.top_categories) ? rec.top_categories : [];
+
+    renderTable($('recProducts'), ['#', '?곹뭹', '留ㅼ텧'], prod.map(p => [
+      String(p.rank ?? ''),
+      String(p.product ?? ''),
+      formatNumber(p.sales ?? 0)
+    ]));
+
+    renderTable($('recCategories'), ['#', '移댄뀒怨좊━', '留ㅼ텧'], cat.map(c => [
+      String(c.rank ?? ''),
+      String(c.category ?? ''),
+      formatNumber(c.sales ?? 0)
+    ]));
+  }
+
+  function renderPredByProductTable(list) {
+    const items = Array.isArray(list) ? list : [];
+    const top = items.slice(0, 30);
+    renderTable($('predByProduct'), ['?쒖쐞', 'product_id', 'product_name', 'predicted_quantity'], top.map((d, i) => [
+      String(i + 1),
+      String(d.product_id ?? ''),
+      String(d.product_name ?? ''),
+      formatNumber(d.predicted_quantity ?? 0)
+    ]));
+  }
+
+  function renderMap(markers) {
+    ensureMap();
+    clearMarkers();
+    const pts = Array.isArray(markers) ? markers : [];
+    if (pts.length === 0) {
+      state.map.setView([20, 0], 2);
+      return;
+    }
+    const bounds = [];
+    for (const s of pts) {
+      const lat = Number(s.lat);
+      const lon = Number(s.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const popup = `<div style="font-size:12px; line-height:1.35;">
+        <div style="font-weight:700;">${(s.store_id ?? '').toString()}</div>
+        <div>${(s.city ?? '').toString()}, ${(s.country ?? '').toString()}</div>
+      </div>`;
+      const m = L.marker([lat, lon]).addTo(state.map).bindPopup(popup);
+      state.markers.push(m);
+      bounds.push([lat, lon]);
+    }
+    if (bounds.length > 0) {
+      state.map.fitBounds(bounds, { padding: [30, 30] });
+    }
+  }
+
+  async function loadAll() {
+    const base = $('baseUrl').value || defaultBaseUrl();
+    setPill('?곗씠??濡쒕뵫 以묅?, 'mid');
+
+    const isFile = location && location.protocol === 'file:';
+    $('corsNote').innerHTML = isFile
+      ? `?꾩옱 <code>file://</code> 濡??대젮 ?덉뒿?덈떎. ??寃쎌슦 釉뚮씪?곗? CORS ?뺤콉?쇰줈 API ?몄텧???ㅽ뙣?????덉뒿?덈떎. <br />
+         沅뚯옣: 諛깆뿏?쒕? ?ㅽ뻾?섍퀬 <code>http://localhost:8000/dashboard</code> 濡??묒냽?섏꽭??`
+      : `???섏씠吏媛 <code>${location.origin}</code> ?먯꽌 ?대━硫?/api/* ?붿껌? 媛숈? ?ㅻ━吏꾩쑝濡??몄텧?⑸땲??`;
+
+    const [health, dataSource, appleData, forecast, predByProduct, rec, storeMarkers] = await Promise.all([
+      apiGet('/health', base),
+      apiGet('/api/data-source', base),
+      apiGet('/api/apple-data', base),
+      apiGet('/api/sales-quantity-forecast', base),
+      apiGet('/api/predicted-demand-by-product', base),
+      apiGet('/api/recommendation-summary', base),
+      apiGet('/api/store-markers', base),
+    ]);
+
+    if (!health || health.status !== 'ok') {
+      setPill('諛깆뿏???곌껐 ?ㅽ뙣', 'bad');
+      $('message').className = 'error';
+      $('message').innerHTML = `諛깆뿏?쒖뿉 ?곌껐?????놁뒿?덈떎. <br />
+        - 諛깆뿏???ㅽ뻾: <code>uvicorn main:app --reload --host 0.0.0.0</code> (?대뜑: <code>web-development\\backend</code>) <br />
+        - 洹??ㅼ쓬 <code>http://localhost:8000/dashboard</code> 濡??묒냽?섏꽭??`;
+      return;
+    }
+
+    setPill('?곌껐??, 'ok');
+    $('message').className = 'ok';
+    $('message').innerHTML = `諛깆뿏???곌껐 OK. ?곗씠???덉륫/吏???뺣낫瑜??쒖떆?⑸땲??`;
+
+    $('lastUpdated').textContent = (appleData?.last_updated ? `last_updated: ${appleData.last_updated}` : '-');
+    $('kpiTotalSales').textContent = formatMoneyKRW(appleData?.summary?.total_sales ?? null);
+    $('kpiTx').textContent = formatNumber(appleData?.summary?.total_transactions ?? null);
+    $('kpiAov').textContent = formatMoneyKRW(appleData?.summary?.avg_order_value ?? null);
+
+    const srcText = dataSource
+      ? `?곗씠???뚯뒪: ${dataSource.source} (SQL ${dataSource.sql_file_count}媛?`
+      : '?곗씠???뚯뒪: -';
+    $('dataSource').textContent = srcText;
+
+    const method = forecast?.method || '-';
+    $('forecastMethod').textContent = `?덉륫: ${method}`;
+
+    renderCharts(appleData, forecast);
+    renderRecommendationTables(rec);
+    renderPredByProductTable(predByProduct?.data || predByProduct);
+    renderMap(storeMarkers?.data || []);
+  }
+
+  function init() {
+    $('baseUrl').value = defaultBaseUrl();
+    $('refreshBtn').addEventListener('click', () => loadAll());
+    $('message').textContent = '以鍮?以묅?;
+    $('corsNote').textContent = '';
+    ensureMap();
+    loadAll();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

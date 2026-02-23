@@ -1,0 +1,39 @@
+============================================
+Vercel에서 Root Directory 찾는 방법
+============================================
+
+[경로]
+  대시보드 → 프로젝트 클릭 → Settings → "Build and Deployment" 영역
+
+[단계]
+
+1. https://vercel.com/dashboard 접속
+2. 배포한 프로젝트(예: blueeye-3184s) 이름 클릭
+3. 프로젝트 상단 메뉴에서 [Settings] 탭 클릭
+4. 왼쪽 사이드바에서 [General] 이 선택된 상태에서
+   페이지를 아래로 스크롤합니다.
+5. "Build and Deployment" (또는 "Build & Development Settings")
+   섹션을 찾습니다.
+   - Framework Preset, Build Command, Output Directory 등과
+     같은 블록 안에 있습니다.
+6. 그 섹션 안에서 "Root Directory" 항목을 찾습니다.
+   - "Root Directory" 라벨 옆에 입력란 또는 [Edit] 버튼이 있습니다.
+7. [Edit] 클릭(또는 입력란 클릭) 후 다음 값을 입력:
+   
+   web-development/frontend
+   
+8. [Save] 클릭
+9. Deployments 탭 → 최신 배포 [...] → Redeploy
+
+============================================
+찾기 어렵다면 (다른 UI일 수 있음)
+============================================
+
+• Settings → "General" 아래로 쭉 내려보기
+• "Root Directory" 검색: Settings 페이지에서 Ctrl+F (또는 Cmd+F)
+  로 "Root" 검색
+• 프로젝트를 "다시 가져오기(Re-import)": 새 프로젝트로 Import 할 때
+  "Configure Project" 화면에서 "Root Directory"를 먼저
+  web-development/frontend 로 설정한 뒤 Deploy 할 수도 있습니다.
+
+============================================

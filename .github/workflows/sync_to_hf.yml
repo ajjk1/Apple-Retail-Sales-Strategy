@@ -1,0 +1,20 @@
+name: Sync to Hugging Face hub # 워크플로우의 이름입니다.
+on: # 어떤 이벤트가 발생했을 때 실행할지 정의합니다.
+  push: # 코드가 push 되었을 때 실행합니다.
+    branches: [main] # main 브랜치에 변화가 있을 때만 작동합니다.
+  workflow_dispatch: # 버튼을 눌러서 수동으로도 실행할 수 있게 해주는 기능입니다.
+
+jobs: # 실행할 작업 단위입니다.
+  sync-to-hub: # 작업의 ID입니다.
+    runs-on: ubuntu-latest # 리눅스 환경에서 실행합니다.
+    steps: # 세부 실행 단계입니다.
+      - uses: actions/checkout@v3 # 현재 리포지토리의 코드를 가져옵니다.
+        with:
+          fetch-depth: 0 # 모든 커밋 히스토리를 가져옵니다.
+          lfs: true # arima_model.joblib 같은 대용량 파일을 위해 LFS를 활성화합니다.
+          
+      - name: Push to hub # 허깅페이스로 밀어넣는 단계 이름입니다.
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # 깃허브 Secrets에 저장한 토큰을 불러옵니다.
+        # 아래 명령어가 실제로 깃허브 코드를 허깅페이스로 복사합니다.
+        run: git push --force https://ajjk1:$HF_TOKEN@huggingface.co/spaces/ajjk1/apple-sales-api main
