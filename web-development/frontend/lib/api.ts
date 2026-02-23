@@ -1,11 +1,14 @@
 /**
- * 클라이언트 전용: 백엔드 베이스 URL. NEXT_PUBLIC_ 접두사만 브라우저에 노출되므로 반드시 NEXT_PUBLIC_API_URL 사용.
- * localhost 폴백 없음 — Vercel 배포 시 환경 변수에 설정된 URL만 사용 (404/DNS 에러 방지).
+ * 클라이언트 전용: 백엔드 베이스 URL.
+ * NEXT_PUBLIC_API_URL 사용. undefined/빈값 시 배포 환경(vercel.app)이면 상수 fallback 사용해 경로 꼬임 방지.
  */
+const API_BASE_FALLBACK = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+
 function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
-  if (env && typeof env === 'string') return env.replace(/\/$/, '');
+  if (env != null && typeof env === 'string' && env.trim() !== '') return env.trim().replace(/\/$/, '');
+  if (typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app')) return API_BASE_FALLBACK;
   return '';
 }
 

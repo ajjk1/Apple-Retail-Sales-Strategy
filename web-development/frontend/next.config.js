@@ -1,13 +1,18 @@
 /** @type {import('next').NextConfig} */
+// /api/:path* 요청이 백엔드( HF Space )로 정확히 전달되도록 rewrites 목적지를 환경 변수 또는 프로덕션 상수로 설정.
+const PRODUCTION_BACKEND_URL = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+
 const nextConfig = {
-  // rewrites: 환경 변수만 사용. localhost 하드코딩 없음 (Vercel 404/DNS 에러 방지).
-  // 프로덕션: BACKEND_URL 또는 NEXT_PUBLIC_API_URL 필수. 개발: 미설정 시에만 127.0.0.1:8000 사용.
   async rewrites() {
     let raw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
-    if (!raw && process.env.NODE_ENV === 'development') {
-      raw = 'http://127.0.0.1:8000';
+    if (!raw || typeof raw !== 'string') {
+      if (process.env.NODE_ENV === 'production') {
+        raw = PRODUCTION_BACKEND_URL;
+      } else {
+        raw = 'http://127.0.0.1:8000';
+      }
     }
-    const backendUrl = typeof raw === 'string' ? raw.replace(/\/$/, '') : '';
+    const backendUrl = raw.replace(/\/$/, '');
     return [
       {
         source: '/api/:path*',

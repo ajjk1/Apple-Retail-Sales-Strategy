@@ -107,11 +107,14 @@ const PIE_YEARS = [2020, 2021, 2022, 2023, 2024] as const;
 const QUANTITY_UNIT = '대';
 const QUANTITY_LABEL = `수량(단위: ${QUANTITY_UNIT})`;
 
-/** 클라이언트 전용: NEXT_PUBLIC_API_URL 만 사용. localhost 폴백 없음 (Vercel 404/DNS 에러 방지). */
+/** 클라이언트 전용: NEXT_PUBLIC_API_URL 사용. undefined 시 vercel.app 이면 HF Space URL 상수 사용. */
+const API_BASE_FALLBACK = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+
 function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
-  if (env && typeof env === 'string') return env.replace(/\/$/, '');
+  if (env != null && typeof env === 'string' && env.trim() !== '') return env.trim().replace(/\/$/, '');
+  if (typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app')) return API_BASE_FALLBACK;
   return '';
 }
 

@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL 만 사용. localhost 폴백 없음 (Vercel 배포 시 env 필수). */
+/** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL. 미설정 시 프로덕션에서는 HF Space 상수 사용. */
+const PRODUCTION_BACKEND_URL = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+
 function getBackendUrls(): string[] {
-  const primary = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
-  if (!primary || typeof primary !== 'string') return [];
+  let primary = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
+  if (!primary || typeof primary !== 'string') {
+    if (process.env.NODE_ENV === 'production') primary = PRODUCTION_BACKEND_URL;
+    else primary = '';
+  }
+  if (!primary) return [];
   const normalized = primary.replace(/\/$/, '');
   return [normalized];
 }
