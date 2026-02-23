@@ -692,6 +692,7 @@ def _fallback_safety_stock_forecast_chart(target_product: str | None = None):
     return {"product_name": target, "chart_data": chart_data, "method": "fallback_ma_trend"}
 
 # if문 사용: 브라우저 보안 정책인 CORS 설정을 독립적으로 관리합니다.
+# Vercel·HF 배포 시 프론트 도메인 허용 (allow_origin_regex로 *.vercel.app 등)
 if True:
     app.add_middleware(
         CORSMiddleware,
@@ -708,12 +709,14 @@ if True:
             "http://127.0.0.1:3004",
             "http://192.168.0.43:3000",
             "http://192.168.0.43:3001",
+            "https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app",
             # 단일 HTML을 file:// 로 열 때 브라우저가 Origin: null 로 보냄 → 허용
             "null",
         ],
-        allow_credentials=True,  # 인증 정보 포함 여부를 허용합니다.
-        allow_methods=["*"],  # GET, POST 등 모든 요청 방식을 허용합니다.
-        allow_headers=["*"],  # 모든 HTTP 헤더를 허용합니다.
+        allow_origin_regex=r"https://.*\.vercel\.app",  # Vercel 프리뷰/프로덕션
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 # 응답 압축 (JSON/텍스트 등 대용량 응답 전송 최적화)
 app.add_middleware(GZipMiddleware, minimum_size=500)

@@ -1,8 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   async rewrites() {
-    // .env.local의 BACKEND_URL 사용 권장 (예: http://127.0.0.1:8000). 미설정 시 localhost:8000
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    // 배포(Vercel): NEXT_PUBLIC_API_URL 또는 BACKEND_URL = HF Space URL. 로컬: BACKEND_URL 또는 8000
+    const backendUrl =
+      process.env.BACKEND_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      'http://localhost:8000';
     return [
       {
         source: '/api/:path*',

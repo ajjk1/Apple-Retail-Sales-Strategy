@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** 백엔드 URL 후보 (8000 우선, 8001 폴백 - 포트 충돌 시 8001 사용) */
+/** 백엔드 URL 후보 (배포 시 NEXT_PUBLIC_API_URL/BACKEND_URL = HF Space 등, 로컬은 8000/8001) */
 function getBackendUrls(): string[] {
-  const primary = process.env.BACKEND_URL || 'http://localhost:8000';
+  const primary =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.BACKEND_URL ||
+    'http://localhost:8000';
   const urls = [
     primary,
     'http://localhost:8001',
