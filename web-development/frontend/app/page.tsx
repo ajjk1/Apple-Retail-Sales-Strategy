@@ -1532,6 +1532,20 @@ export default function Home() {
                       : ''}
                   </p>
                 )}
+                {/* Vercel 환경 변수 확인: NEXT_PUBLIC_API_URL 설정 시 표시 */}
+                <p className="text-xs text-[#6e6e73] pt-1 border-t border-gray-100">
+                  API 베이스:{' '}
+                  {typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL
+                    ? (() => {
+                        try {
+                          const h = new URL(process.env.NEXT_PUBLIC_API_URL).hostname;
+                          return h ? ` 설정됨 (${h})` : ' 설정됨';
+                        } catch {
+                          return ' 설정됨';
+                        }
+                      })()
+                    : ' 미설정 (로컬/상대경로)'}
+                </p>
               </div>
             )}
           </div>
