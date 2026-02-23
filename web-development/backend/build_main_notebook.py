@@ -44,7 +44,7 @@ def main():
         (421, 463, "안전재고 파이프라인", "_inv_run_inventory_pipeline (Safety_Stock·Inventory·Status·Frozen_Money 산출).", "04.Inventory Optimization"),
         (461, 477, "재고 상태별 건수 API용", "get_safety_stock_summary.", "04.Inventory Optimization"),
         (475, 525, "안전재고 KPI (동결자금·Danger/Overstock·예상매출)", "get_kpi_summary.", "04.Inventory Optimization"),
-        (523, 553, "안전재고 상세 리스트", "get_inventory_list (status_filter 지원).", "04.Inventory Optimization"),
+        (523, 626, "안전재고 상세 리스트 (매장별)", "get_inventory_list, _get_inventory_list_impl (status_filter·한글·0.1~3.5배 시뮬레이션).", "04.Inventory Optimization"),
         (551, 591, "재고 경고 (Health_Index < 70)", "get_inventory_critical_alerts.", "04.Inventory Optimization"),
         (589, 611, "추천용 재고 건전성·분기 라벨·ARIMA 차트 헬퍼", "get_inventory_health_for_recommendation, _inv_quarter_label, _inv_get_forecast_chart_with_arima.", "04.Inventory Optimization"),
         (608, 696, "수요 예측 차트 데이터", "get_demand_forecast_chart_data (ARIMA·캐시).", "04.Inventory Optimization"),
@@ -62,9 +62,12 @@ def main():
         (1356, 1393, "대시보드 URL·루트", "_DASHBOARD_VERCEL_URL, root.", "05.Inventory Optimization"),
         (1392, 1460, "health·dashboard HTML", "health_check, api_health_check, api_health_page, dashboard_html.", "05.Inventory Optimization"),
         (1889, 1972, "quick-status·integration-status·추천 요약·스토어 예측/추천", "api_quick_status, api_integration_status, api_recommendation_summary, api_store_sales_forecast, api_store_recommendations.", "05.Inventory Optimization"),
-        (1970, 2083, "store-list (realtime 우선·폴백)", "api_store_list.", "05.Inventory Optimization"),
-        (2080, 2118, "맞춤 추천·협업 필터·피드백 루프", "api_user_personalized_recommendations, api_collab_filter_recommendations, api_recommendation_feedback.", "05.Inventory Optimization"),
-        (2344, 2393, "last-updated·apple-data·__main__", "api_last_updated, get_apple_data, --integration-check 진입.", "05.Inventory Optimization"),
+        (1970, 2080, "store-list 이전 구간", "api_recommendation_summary 등 ~ store-sales-forecast 데코레이터 직전.", "05.Inventory Optimization"),
+        (2080, 2095, "store-sales-forecast", "api_store_sales_forecast (매출 예측 시계열, docstring 포함 전체).", "05.Inventory Optimization"),
+        (2095, 2121, "store-recommendations", "api_store_recommendations (4가지 추천 모델, docstring 포함 전체).", "05.Inventory Optimization"),
+        (2122, 2180, "store-list (realtime 우선·폴백)", "api_store_list.", "05.Inventory Optimization"),
+        (2179, 2260, "맞춤 추천·협업 필터·피드백 루프", "api_user_personalized_recommendations, api_collab_filter_recommendations, api_recommendation_feedback.", "05.Inventory Optimization"),
+        (2343, 2484, "last-updated·apple-data·__main__", "api_last_updated, get_apple_data, --integration-check 진입.", "05.Inventory Optimization"),
     ]
 
     # 섹션 순서로 정렬 (동일 섹션 내에서는 main.py 등장 순서 유지)

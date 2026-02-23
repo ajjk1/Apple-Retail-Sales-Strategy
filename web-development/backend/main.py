@@ -536,7 +536,15 @@ def get_inventory_list(status_filter: Optional[list] = None):
     - 현재 재고(Inventory)에 0.1~3.5 배 랜덤 상수를 곱하여 시뮬레이션.
     - 상태(Status)는 한글로 반환: 위험, 과잉, 정상.
     """
-    # 데이터 로드 및 파이프라인 적용
+    try:
+        return _get_inventory_list_impl(status_filter)
+    except Exception as e:
+        print(f"[Apple Retail API] get_inventory_list 오류: {e}")
+        return []
+
+
+def _get_inventory_list_impl(status_filter: Optional[list] = None):
+    """get_inventory_list 실제 구현 (예외는 상위에서 처리)."""
     df = load_sales_dataframe() if callable(load_sales_dataframe) else None
     if df is None:
         return []
@@ -594,6 +602,8 @@ def get_inventory_list(status_filter: Optional[list] = None):
 
     status_per_group = df.groupby(group_col)["Status"].apply(_worst_status)
     agg["Status"] = agg[group_col].map(status_per_group)
+    # 매핑 실패 시 기본값 정상
+    agg["Status"] = agg["Status"].fillna("Normal")
     # 현재 재고에 0.1 ~ 3.5 배 랜덤 상수 적용 (요구사항: 데이터 시뮬레이션)
     np.random.seed(42)
     n = len(agg)
@@ -1766,10 +1776,14 @@ def api_data_source():
 
 @app.get("/api/safety-stock")
 def api_safety_stock():
-    """안전재고 대시보드용: 재고 상태별 건수 (main.py 통합 로직)"""
+    """안전재고 대시보드용: 재고 상태별 건수 (한글: 위험, 과잉, 정상)."""
     if get_safety_stock_summary is None:
         return {"statuses": [], "total_count": 0}
-    return get_safety_stock_summary()
+    try:
+        return get_safety_stock_summary()
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock 오류: {e}")
+        return {"statuses": [], "total_count": 0}
 
 
 @app.get("/api/safety-stock-forecast-chart")
@@ -1874,21 +1888,29 @@ def api_safety_stock_sales_by_product(
 
 @app.get("/api/safety-stock-kpi")
 def api_safety_stock_kpi():
-    """Inventory Action Center: 총 잠긴 돈, 위험 품목 수, 과잉 품목 수 (Risk KPIs)"""
+    """Inventory Action Center: 총 잠긴 돈, 위험 품목 수, 과잉 품목 수 (Risk KPIs)."""
     if get_kpi_summary is None:
         return {"total_frozen_money": 0.0, "danger_count": 0, "overstock_count": 0, "predicted_demand": 0, "expected_revenue": 0.0}
-    return get_kpi_summary()
+    try:
+        return get_kpi_summary()
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock_kpi 오류: {e}")
+        return {"total_frozen_money": 0.0, "danger_count": 0, "overstock_count": 0, "predicted_demand": 0, "expected_revenue": 0.0}
 
 
 @app.get("/api/safety-stock-inventory-list")
 def api_safety_stock_inventory_list(status_filter: str | None = None):
-    """Inventory Action Center: 상세 재고 테이블 (Status별 필터: Danger, Overstock 등)"""
+    """Inventory Action Center: 매장별 재고 목록 (Status 필터: 위험, 과잉 또는 Danger, Overstock)."""
     if get_inventory_list is None:
         return []
-    filters = None
-    if status_filter and status_filter.strip():
-        filters = [s.strip() for s in status_filter.split(",") if s.strip()]
-    return get_inventory_list(status_filter=filters)
+    try:
+        filters = None
+        if status_filter and status_filter.strip():
+            filters = [s.strip() for s in status_filter.split(",") if s.strip()]
+        return get_inventory_list(status_filter=filters)
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock_inventory_list 오류: {e}")
+        return []
 
 
 @app.get("/api/inventory-critical-alerts")
@@ -1920,15 +1942,19 @@ def _read_inventory_comments() -> list:
         with open(_INVENTORY_COMMENTS_PATH, "r", encoding="utf-8") as f:
             r = csv.DictReader(f)
             for row in r:
-                # 매장명: store_name 우선, 없으면 product_name (기존 호환)
-                store_name = (row.get("store_name") or row.get("product_name") or "").strip()
-                out.append({
-                    "store_name": store_name,
-                    "product_name": store_name,
-                    "comment": row.get("comment", "").strip(),
-                    "author": row.get("author", "").strip(),
-                    "created_at": row.get("created_at", "").strip(),
-                })
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    store_name = (row.get("store_name") or row.get("product_name") or "").strip()
+                    out.append({
+                        "store_name": store_name,
+                        "product_name": store_name,
+                        "comment": (row.get("comment") or "").strip(),
+                        "author": (row.get("author") or "").strip(),
+                        "created_at": (row.get("created_at") or "").strip(),
+                    })
+                except Exception:
+                    continue
     except Exception:
         pass
     return out
@@ -1969,8 +1995,12 @@ async def api_inventory_comments_post(request: Request):
     author = (body.get("author") or "").strip()
     if not store_name or not comment:
         return {"ok": False, "error": "store_name and comment are required"}
-    _append_inventory_comment(store_name, comment, author)
-    return {"ok": True, "comments": _read_inventory_comments()}
+    try:
+        _append_inventory_comment(store_name, comment, author)
+        return {"ok": True, "comments": _read_inventory_comments()}
+    except Exception as e:
+        print(f"[Apple Retail API] api_inventory_comments_post 오류: {e}")
+        return {"ok": False, "error": "저장 실패", "comments": _read_inventory_comments()}
 
 
 @app.get("/api/quick-status")

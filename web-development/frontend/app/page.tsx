@@ -644,9 +644,16 @@ export default function Home() {
         if (json) setSafetyStockKpiData(json);
         else setSafetyStockKpiData(null);
       }).catch(() => setSafetyStockKpiData(null)),
-      apiGet<{ product_name?: string; comment?: string; author?: string; created_at?: string }[]>('/api/inventory-comments').then((json) => {
-        const list = json && (json as { comments?: { product_name: string; comment: string; author: string; created_at: string }[] }).comments;
-        setInventoryComments(Array.isArray(list) ? list : []);
+      apiGet<{ comments?: { store_name?: string; product_name?: string; comment: string; author: string; created_at: string }[] }>('/api/inventory-comments').then((json) => {
+        const raw = json && typeof json === 'object' && 'comments' in json ? (json as { comments?: unknown }).comments : null;
+        const list = Array.isArray(raw) ? raw : [];
+        setInventoryComments(list.map((c: { store_name?: string; product_name?: string; comment?: string; author?: string; created_at?: string }) => ({
+          store_name: (c.store_name ?? c.product_name ?? '').trim(),
+          product_name: (c.store_name ?? c.product_name ?? '').trim(),
+          comment: (c.comment ?? '').trim(),
+          author: (c.author ?? '').trim(),
+          created_at: (c.created_at ?? '').trim(),
+        })));
       }).catch(() => setInventoryComments([])),
     ]).finally(() => { setSafetyStockLoading(false); setInventoryCommentsLoading(false); });
     // 매장별 재고 목록 (한글 상태 필터: 위험, 과잉)
@@ -656,6 +663,13 @@ export default function Home() {
       else setSafetyStockInventoryList([]);
     }).catch(() => setSafetyStockInventoryList([])).finally(() => setSafetyStockInventoryListLoading(false));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
+
+  // 매장별 재고 목록/필터 변경 시, 선택 매장이 목록에 없으면 선택 해제 (동기화)
+  useEffect(() => {
+    if (!selectedStoreForNote) return;
+    const names = new Set(safetyStockInventoryList.map((r) => (r.Store_Name ?? '').trim()).filter(Boolean));
+    if (!names.has(selectedStoreForNote.trim())) setSelectedStoreForNote(null);
+  }, [safetyStockInventoryList, selectedStoreForNote]);
 
   /** 상품별 차트에서 선택한 상품에 대한 수요 예측 & 적정 재고 차트 데이터 로드 */
   useEffect(() => {
@@ -1658,7 +1672,7 @@ export default function Home() {
                         <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-semibold text-[#1d1d1f]">매장별 재고 현황</h3>
                           <p className="text-xs text-[#86868b] mt-0.5">
-                            매장명 · 현재고 기준 가로형 막대 | 재고 상태에 따라 색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) |
+                            매장명 · 잠긴 돈(₩) 기준 가로형 막대 | 재고 상태에 따라 색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) |
                             <span className="ml-1 text-[10px]">데이터: SQL (Inventory Optimization 파이프라인) | 정렬: 잠긴 돈 내림차순</span>
                           </p>
                         </div>
@@ -1683,19 +1697,19 @@ export default function Home() {
                               <BarChart
                                 layout="vertical"
                                 data={safetyStockInventoryList.map((row) => ({
-                                  name: row.Store_Name || '—',
-                                  현재고: Number(row.Inventory),
-                                  상태: row.Status || '정상',
+                                  name: (row.Store_Name ?? '').trim() || '—',
+                                  잠긴돈: Number(row.Frozen_Money) || 0,
+                                  상태: (row.Status ?? '').trim() || '정상',
                                 }))}
                                 margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
                               >
                                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                                <XAxis type="number" tickFormatter={(v) => v.toLocaleString()} />
-                                <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
-                                <Tooltip formatter={(value: number) => [value.toLocaleString(), '현재고']} labelFormatter={(label) => `매장: ${label}`} />
-                                <Bar dataKey="현재고" radius={[0, 4, 4, 0]} isAnimationActive={true}>
+                                <XAxis type="number" tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`} />
+                                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
+                                <Tooltip formatter={(value: number) => [`₩${(Number(value) || 0).toLocaleString()}`, '잠긴 돈']} labelFormatter={(label) => `매장: ${label ?? '—'}`} />
+                                <Bar dataKey="잠긴돈" radius={[0, 4, 4, 0]} isAnimationActive={true}>
                                   {safetyStockInventoryList.map((row, i) => {
-                                    const status = (row.Status || '').trim();
+                                    const status = (row.Status ?? '').trim();
                                     let fill = '#3b82f6';
                                     if (status === '위험') fill = '#dc2626';
                                     else if (status === '과잉') fill = '#f59e0b';
@@ -1755,9 +1769,11 @@ export default function Home() {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ store_name: selectedStoreForNote, comment: managerNoteInput, author: '관리자' }),
                               });
-                              const data = await res.json();
-                              if (data?.comments) setInventoryComments(data.comments);
-                              setManagerNoteInput('');
+                              const data = await res.json().catch(() => ({}));
+                              if (res.ok && data?.comments) {
+                                setInventoryComments(data.comments);
+                                setManagerNoteInput('');
+                              }
                             } finally {
                               setSaveCommentLoading(false);
                             }

@@ -60,8 +60,9 @@ interface SalesForecastData {
   store_id: string;
 }
 
-/** 안전재고 대시보드: 과잉 재고 품목 (Inventory Action Center 연동) */
+/** 안전재고 대시보드: 과잉 재고 (매장별, Inventory Action Center 연동) */
 interface OverstockItem {
+  Store_Name?: string;
   Product_Name: string;
   Inventory: number;
   Safety_Stock: number;
@@ -910,7 +911,7 @@ export default function RecommendationPage() {
                         <tbody>
                           {overstockList.slice(0, 8).map((row, i) => (
                             <tr key={i} className="border-b border-amber-100/50">
-                              <td className="py-1.5 text-[#1d1d1f] truncate max-w-[180px]">{row.Product_Name}</td>
+                              <td className="py-1.5 text-[#1d1d1f] truncate max-w-[180px]">{(row.Store_Name ?? row.Product_Name) || '—'}</td>
                               <td className="py-1.5 text-right text-[#1d1d1f]">₩{Number(row.Frozen_Money).toLocaleString()}</td>
                               <td className="py-1.5 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
                             </tr>
@@ -1168,7 +1169,7 @@ export default function RecommendationPage() {
                               {row.Store_Name !== undefined && (
                                 <td className="py-1.5 px-2 text-[#1d1d1f] truncate max-w-[120px]">{row.Store_Name || '-'}</td>
                               )}
-                              <td className="py-1.5 px-2 font-medium text-[#1d1d1f] truncate max-w-[180px]">{row.Product_Name || '-'}</td>
+                              <td className="py-1.5 px-2 font-medium text-[#1d1d1f] truncate max-w-[180px]">{(row.Store_Name ?? row.Product_Name) || '—'}</td>
                               <td className="py-1.5 px-2 text-right text-rose-700 font-medium">{row.Health_Index}%</td>
                               <td className="py-1.5 px-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
                               <td className="py-1.5 px-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
