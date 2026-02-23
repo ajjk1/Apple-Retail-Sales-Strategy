@@ -468,23 +468,26 @@ export default function Home() {
   }, [showSafetyStockDashboard, selectedYear]);
 
   useEffect(() => {
-    const bases = getApiBase() ? [getApiBase()!] : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
+    // HF 등 원격 백엔드: 직접 URL 먼저, 실패 시 상대경로(rewrite 프록시) → localhost 폴백
+    const fixed = getApiBase();
+    const bases = fixed
+      ? [fixed, '', 'http://localhost:8000', 'http://127.0.0.1:8000']
+      : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
     let cancelled = false;
-    const timeoutMs = 10000; // 백엔드 첫 기동 시 여유 있게
+    const timeoutMs = 20000; // HF cold start 등으로 여유 있게
     const tryOne = (base: string): Promise<void> => {
       const url = base ? `${base}/api/health` : '/api/health';
       const ac = new AbortController();
       const t = setTimeout(() => ac.abort(), timeoutMs);
-      return fetch(url, { signal: ac.signal })
+      return fetch(url, { signal: ac.signal, cache: 'no-store' })
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.statusText))))
         .then(() => { if (!cancelled) setBackendConnected(true); })
         .catch(() => Promise.reject())
         .finally(() => clearTimeout(t));
     };
-    tryOne(bases[0])
-      .catch(() => bases[1] && tryOne(bases[1]))
-      .catch(() => bases[2] && tryOne(bases[2]))
-      .catch(() => { if (!cancelled) setBackendConnected(false); });
+    const run = (i: number): Promise<void> =>
+      i < bases.length ? tryOne(bases[i]).catch(() => run(i + 1)) : Promise.reject();
+    run(0).catch(() => { if (!cancelled) setBackendConnected(false); });
     return () => { cancelled = true; };
   }, [healthCheckTrigger]);
 
@@ -534,12 +537,14 @@ export default function Home() {
         .then(setDataAndClearError);
 
     const base = getApiBase();
+    // 원격 백엔드 설정 시에도 상대경로(rewrite 프록시)·localhost 폴백으로 연동 안정화
     const urls = base
-      ? [`${base}/api/apple-data`]
+      ? [`${base}/api/apple-data`, '/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data']
       : ['/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data'];
     tryFetch(urls[0])
       .catch(() => (urls[1] ? tryFetch(urls[1]) : Promise.reject(new Error('No fallback'))))
       .catch(() => (urls[2] ? tryFetch(urls[2]) : Promise.reject(new Error('No fallback'))))
+      .catch(() => (urls[3] ? tryFetch(urls[3]) : Promise.reject(new Error('No fallback'))))
       .catch((err: Error) => {
         if (!cancelled && err?.name !== 'AbortError') setError('백엔드 연결 실패');
       })
