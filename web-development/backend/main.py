@@ -709,11 +709,12 @@ if True:
             "http://127.0.0.1:3004",
             "http://192.168.0.43:3000",
             "http://192.168.0.43:3001",
+            "https://apple-retail-sales-strategy.vercel.app",
             "https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app",
             # 단일 HTML을 file:// 로 열 때 브라우저가 Origin: null 로 보냄 → 허용
             "null",
         ],
-        allow_origin_regex=r"https://.*\.vercel\.app",  # Vercel 프리뷰/프로덕션
+        allow_origin_regex=r"https://.*\.vercel\.app|http://192\.168\.\d+\.\d+:\d+",  # Vercel 프리뷰/기타 + 로컬 네트워크
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -920,15 +921,41 @@ def load_retail_data():
     }
 
 
+# Vercel 대시보드 URL (HF Space 방문 시 "대시보드 보기" 링크용)
+_DASHBOARD_VERCEL_URL = "https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app"
+
+
 @app.get("/")
-def root():
-    """루트 접속 시 API 안내 (브라우저에서 localhost:8000 시 정상 응답)"""
-    return {
+def root(request: Request):
+    """루트 접속 시 API 안내. 브라우저는 HTML(대시보드 링크), API 클라이언트는 JSON."""
+    base = str(request.base_url).rstrip("/")
+    data = {
         "service": "apple-retail-api",
         "docs": "/docs",
         "health": "/api/health",
-        "message": "API 문서: http://localhost:8000/docs",
+        "apple_data": "/api/apple-data",
+        "dashboard": _DASHBOARD_VERCEL_URL,
+        "message": f"API 문서: {base}/docs  |  상태: {base}/api/health  |  대시보드: {_DASHBOARD_VERCEL_URL}",
     }
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/html" in accept:
+        html = f"""<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apple Retail API</title>
+<style>body{{font-family:system-ui,sans-serif;max-width:560px;margin:2rem auto;padding:0 1rem;}} a{{color:#0066cc;}} .btn{{display:inline-block;margin:0.5rem 0.5rem 0 0;padding:0.6rem 1.2rem;background:#0066cc;color:#fff;text-decoration:none;border-radius:8px;}} .btn:hover{{opacity:.9;}} ul{{line-height:1.8;}}</style></head>
+<body>
+<h1>Apple Retail Sales Strategy API</h1>
+<p><strong>대시보드 보기 (데이터·지도·차트)</strong></p>
+<p><a href="{_DASHBOARD_VERCEL_URL}" class="btn" target="_blank" rel="noopener">Vercel 대시보드 열기</a></p>
+<p>API 안내:</p>
+<ul>
+<li><a href="{base}/docs" target="_blank">API 문서 (Swagger)</a></li>
+<li><a href="{base}/api/health" target="_blank">상태 확인</a></li>
+<li><a href="{base}/api/apple-data" target="_blank">예측 데이터 (JSON)</a></li>
+</ul>
+<p style="color:#666;font-size:0.9rem;">JSON 응답이 필요하면 Accept: application/json 으로 요청하세요.</p>
+</body></html>"""
+        return HTMLResponse(html)
+    return data
 
 
 @app.get("/health")

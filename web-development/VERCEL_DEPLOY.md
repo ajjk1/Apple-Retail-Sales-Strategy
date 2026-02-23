@@ -37,14 +37,18 @@ Vercel 프로젝트 → **Settings** → **Environment Variables**에서 추가:
 
 | 이름 | 값 | 용도 |
 |------|-----|------|
-| `BACKEND_URL` | `https://본인-백엔드-URL` | Next.js 서버의 rewrites가 API 요청을 전달할 백엔드 주소. 백엔드 미배포 시 빈 값 또는 `http://localhost:8000`(로컬 테스트용) |
-| `NEXT_PUBLIC_API_URL` | `https://본인-백엔드-URL` | 브라우저에서 API 직접 호출 시 사용. 백엔드와 동일하게 설정 권장 |
+| `BACKEND_URL` | `https://apple-retail-study-apple-retail-sales-strategy.hf.space` | Next.js rewrites가 API 요청을 전달할 백엔드(HF Space) 주소 |
+| `NEXT_PUBLIC_API_URL` | `https://apple-retail-study-apple-retail-sales-strategy.hf.space` | 브라우저에서 API 직접 호출 시 사용. 위와 동일하게 설정 |
 
-**백엔드를 아직 배포하지 않은 경우**
+**이 프로젝트 기준 (데이터 연동)**
 
-- 위 두 값 없이 배포해도 프론트만 올라갑니다.
-- 대시보드 UI는 보이지만, API 호출이 실패해 데이터는 안 나올 수 있습니다.
-- 나중에 백엔드를 Railway/Render 등에 배포한 뒤, 해당 URL로 환경 변수만 수정·재배포하면 됩니다.
+- **대시보드**: [https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app](https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app)
+- **백엔드 API**: [https://apple-retail-study-apple-retail-sales-strategy.hf.space](https://apple-retail-study-apple-retail-sales-strategy.hf.space)
+- 위 두 환경 변수를 HF Space URL로 설정한 뒤 **재배포**하면, Vercel 대시보드에서 HF Space 데이터(모델 상태·예측·매출 등)가 표시됩니다.
+
+**다른 백엔드를 쓰는 경우**
+
+- Railway/Render 등 본인 백엔드 URL로 `BACKEND_URL`, `NEXT_PUBLIC_API_URL`를 넣고 재배포하면 됩니다.
 
 ---
 

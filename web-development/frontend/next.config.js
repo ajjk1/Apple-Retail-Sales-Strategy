@@ -1,11 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Vercel: Settings → Environment Variables 에 BACKEND_URL, NEXT_PUBLIC_API_URL 설정 시 빌드/런타임에 자동 주입. 별도 env 선언 불필요.
   async rewrites() {
-    // 배포(Vercel): NEXT_PUBLIC_API_URL 또는 BACKEND_URL = HF Space URL. 로컬: BACKEND_URL 또는 8000
-    const backendUrl =
+    const raw =
       process.env.BACKEND_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
-      'http://localhost:8000';
+      'http://127.0.0.1:8000';
+    const backendUrl = typeof raw === 'string' ? raw.replace(/\/$/, '') : raw;
     return [
       {
         source: '/api/:path*',

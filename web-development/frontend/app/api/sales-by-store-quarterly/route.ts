@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** 백엔드 URL 후보 (배포 시 NEXT_PUBLIC_API_URL/BACKEND_URL = HF Space 등, 로컬은 8000/8001) */
+/** 백엔드 URL 후보 (서버사이드: BACKEND_URL 우선. 끝 슬래시 제거하여 이중 슬래시 방지) */
 function getBackendUrls(): string[] {
   const primary =
-    process.env.NEXT_PUBLIC_API_URL ||
     process.env.BACKEND_URL ||
-    'http://localhost:8000';
+    process.env.NEXT_PUBLIC_API_URL ||
+    'http://127.0.0.1:8000';
+  const normalized = typeof primary === 'string' ? primary.replace(/\/$/, '') : primary;
   const urls = [
-    primary,
+    normalized,
+    'http://localhost:8000',
     'http://localhost:8001',
     'http://127.0.0.1:8000',
     'http://127.0.0.1:8001',

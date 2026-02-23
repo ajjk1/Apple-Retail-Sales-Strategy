@@ -81,10 +81,10 @@ npm run dev
 - `BACKEND_URL=http://127.0.0.1:8000`  
 - `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000`
 
-**Vercel 배포** (백엔드 = HF Space): Vercel 프로젝트 환경 변수에  
-- `NEXT_PUBLIC_API_URL=https://apple-retail-study-Apple-Retail-Sales-Strategy.hf.space`  
-- `BACKEND_URL` (동일 값 권장, rewrites/API 라우트용)  
-설정 시 프론트가 해당 Space API를 호출합니다. 백엔드 CORS에 `*.vercel.app` 허용됨.
+**Vercel·HF Space 연동** (프로덕션에서 데이터 보기):
+- **대시보드**: https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app  
+- **백엔드 API**: https://apple-retail-study-apple-retail-sales-strategy.hf.space  
+Vercel 프로젝트 환경 변수에 `BACKEND_URL`, `NEXT_PUBLIC_API_URL` = 위 HF Space URL 로 설정 후 재배포하면 대시보드에 데이터가 표시됩니다. HF Space 루트 접속 시 브라우저에서는 "Vercel 대시보드 열기" 링크가 보입니다.
 
 ---
 

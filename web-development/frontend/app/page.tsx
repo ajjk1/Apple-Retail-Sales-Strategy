@@ -106,7 +106,7 @@ const PIE_YEARS = [2020, 2021, 2022, 2023, 2024] as const;
 const QUANTITY_UNIT = '대';
 const QUANTITY_LABEL = `수량(단위: ${QUANTITY_UNIT})`;
 
-/** 백엔드 API 베이스 URL. NEXT_PUBLIC_API_URL 설정 시 해당 주소만 사용, 미설정 시 상대경로 → localhost:8000 → 127.0.0.1:8000 순 시도 */
+/** 클라이언트용 백엔드 베이스 URL. NEXT_PUBLIC_ 접두사 필수(브라우저 노출). 끝 슬래시 제거. */
 function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
@@ -116,10 +116,12 @@ function getApiBase(): string {
 
 const API_TIMEOUT_MS = 20000; // 백엔드 첫 로드가 느릴 수 있음
 
-/** API 호출: 타임아웃·재시도 적용. NEXT_PUBLIC_API_URL 우선, 없으면 상대경로 → localhost:8000 → 127.0.0.1:8000 */
+/** API 호출: 상대경로(프록시) 우선 → localhost 폴백. 로컬에서 백엔드 데이터가 보이도록. */
 async function apiGet<T = unknown>(path: string): Promise<T | null> {
   const fixed = getApiBase();
-  const bases = fixed ? [fixed] : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
+  const bases = fixed
+    ? ['', 'http://localhost:8000', 'http://127.0.0.1:8000', fixed]
+    : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
   for (const base of bases) {
     try {
       const url = base ? `${base}${path}` : path;
@@ -468,10 +470,10 @@ export default function Home() {
   }, [showSafetyStockDashboard, selectedYear]);
 
   useEffect(() => {
-    // HF 등 원격 백엔드: 직접 URL 먼저, 실패 시 상대경로(rewrite 프록시) → localhost 폴백
+    // 상대경로(Next.js 프록시) 우선 → localhost 폴백. 로컬에서 백엔드 데이터가 보이도록.
     const fixed = getApiBase();
     const bases = fixed
-      ? [fixed, '', 'http://localhost:8000', 'http://127.0.0.1:8000']
+      ? ['', 'http://localhost:8000', 'http://127.0.0.1:8000', fixed]
       : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
     let cancelled = false;
     const timeoutMs = 20000; // HF cold start 등으로 여유 있게
@@ -537,9 +539,9 @@ export default function Home() {
         .then(setDataAndClearError);
 
     const base = getApiBase();
-    // 원격 백엔드 설정 시에도 상대경로(rewrite 프록시)·localhost 폴백으로 연동 안정화
+    // 상대경로(프록시) 우선 → localhost 폴백. 로컬에서 데이터가 보이도록.
     const urls = base
-      ? [`${base}/api/apple-data`, '/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data']
+      ? ['/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data', `${base}/api/apple-data`]
       : ['/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data'];
     tryFetch(urls[0])
       .catch(() => (urls[1] ? tryFetch(urls[1]) : Promise.reject(new Error('No fallback'))))
@@ -1749,9 +1751,9 @@ export default function Home() {
                           onClick={async () => {
                             if (!selectedProductForNote?.trim() || !managerNoteInput.trim()) return;
                             setSaveCommentLoading(true);
-                            const base = getApiBase() || 'http://localhost:8000';
+                            // 상대경로 사용 → Next.js rewrites로 백엔드 전달. CORS 회피.
                             try {
-                              const res = await fetch(`${base}/api/inventory-comments`, {
+                              const res = await fetch('/api/inventory-comments', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ product_name: selectedProductForNote, comment: managerNoteInput, author: '관리자' }),
