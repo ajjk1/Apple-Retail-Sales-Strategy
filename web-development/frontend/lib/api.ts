@@ -1,14 +1,23 @@
 /**
  * 클라이언트 전용: 백엔드 베이스 URL.
- * NEXT_PUBLIC_API_URL 사용. undefined/빈값 시 배포 환경(vercel.app)이면 상수 fallback 사용해 경로 꼬임 방지.
+ * NEXT_PUBLIC_API_URL 사용. undefined/빈값/ localhost 시 배포 환경(vercel.app)이면 상수 fallback 사용해 경로 꼬임 방지.
  */
 const API_BASE_FALLBACK = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+
+function isUnsafeApiBase(url: string | undefined): boolean {
+  if (url == null || typeof url !== 'string') return true;
+  const u = url.trim().toLowerCase();
+  if (!u.startsWith('http')) return true;
+  if (u.includes('localhost') || u.startsWith('http://127.0.0.1') || u.startsWith('http://[::1]')) return true;
+  return false;
+}
 
 function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
-  if (env != null && typeof env === 'string' && env.trim() !== '') return env.trim().replace(/\/$/, '');
-  if (typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app')) return API_BASE_FALLBACK;
+  const isVercel = typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app');
+  if (env != null && typeof env === 'string' && env.trim() !== '' && !isUnsafeApiBase(env)) return env.trim().replace(/\/$/, '');
+  if (isVercel) return API_BASE_FALLBACK;
   return '';
 }
 

@@ -1,17 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL. 미설정 시 프로덕션에서는 HF Space 상수 사용. */
+/** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL. 미설정/ localhost 시 프로덕션에서는 HF Space 상수 사용. */
 const PRODUCTION_BACKEND_URL = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
 
+function isProductionLike(): boolean {
+  return process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+}
+
+function isUnsafeBackendUrl(url: string | undefined): boolean {
+  if (url == null || typeof url !== 'string') return true;
+  const u = url.trim().toLowerCase();
+  if (!u.startsWith('http')) return true;
+  if (u.startsWith('http://localhost') || u.startsWith('https://localhost')) return true;
+  if (u.startsWith('http://127.0.0.1') || u.startsWith('http://[::1]')) return true;
+  return false;
+}
+
 function getBackendUrls(): string[] {
-  let primary = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
-  if (!primary || typeof primary !== 'string') {
-    if (process.env.NODE_ENV === 'production') primary = PRODUCTION_BACKEND_URL;
-    else primary = '';
-  }
-  if (!primary) return [];
-  const normalized = primary.replace(/\/$/, '');
-  return [normalized];
+  const primary = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
+  let base = primary;
+  if (isUnsafeBackendUrl(base) && isProductionLike()) base = PRODUCTION_BACKEND_URL;
+  else if (isUnsafeBackendUrl(base)) base = '';
+  if (!base) return [];
+  return [base.replace(/\/$/, '')];
 }
 
 export async function GET(request: NextRequest) {
