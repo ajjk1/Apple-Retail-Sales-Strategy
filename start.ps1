@@ -141,7 +141,7 @@ Write-Host ""
 # Step 1: Backend (호스트 $hostIp 에서 리스닝)
 Write-Host "[1/4] Backend starting ($hostIp`:8000)..." -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendPath'; Write-Host '=== FastAPI Backend ($hostIp`:8000) ===' -ForegroundColor Green; uvicorn main:app --reload --host $hostIp --port 8000"
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 10
 
 # Step 2: Wait for backend health ($hostIp:8000)
 Write-Host "[2/4] Waiting for backend..." -ForegroundColor Yellow
@@ -151,7 +151,7 @@ $ready = $false
 $healthUri = "http://${hostIp}:8000/api/health"
 while ($attempt -lt $maxAttempts) {
     try {
-        $null = Invoke-WebRequest -Uri $healthUri -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
+        $null = Invoke-WebRequest -Uri $healthUri -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
         $ready = $true
         Write-Host "  Backend ready!" -ForegroundColor Green
         break
