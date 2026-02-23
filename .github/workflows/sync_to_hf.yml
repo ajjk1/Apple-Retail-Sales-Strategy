@@ -24,5 +24,6 @@ jobs:
             echo "대용량 백업 폴더를 전송 목록에서 삭제했습니다."
           fi
           
-          # 2. 허깅페이스로 강제 푸시 (이 명령어가 실제 전송을 담당합니다)
-          git push --force https://ajjk1:$HF_TOKEN@huggingface.co/spaces/ajjk1/apple-sales-api main
+          # 2. 허깅페이스 Space로 푸시 (대상: apple-retail-study/Apple-Retail-Sales-Strategy)
+          # HF_TOKEN 소유 계정이 해당 Space 쓰기 권한이 있어야 함
+          git push --force https://ajjk1:$HF_TOKEN@huggingface.co/spaces/apple-retail-study/Apple-Retail-Sales-Strategy main

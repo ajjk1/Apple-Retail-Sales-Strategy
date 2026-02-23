@@ -274,3 +274,11 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 - **추천 대시보드**: 상점 목록 12초 타임아웃·재시도·에러 시 "다시 불러오기". 샘플/시뮬레이션 구간은 카드 테두리·뱃지·설명으로 구분.
 - **데이터 소스 표시**: 대시보드에서 "데이터: SQL · 예측: arima_model.joblib" 등 명시.
 - **실행**: `web-development/start.ps1` 실행 → 백엔드(8000) → 프론트(3000). 작업 이력은 **start.ps1 상단 주석**에 순서대로 기록됨.
+
+### 9.4 Hugging Face Space (백엔드 배포)
+
+- **Space**: [apple-retail-study/Apple-Retail-Sales-Strategy](https://huggingface.co/spaces/apple-retail-study/Apple-Retail-Sales-Strategy)
+- **Exit 137(OOM) 대응**:  
+  - `.hfignore`에서 `*.sql` 제외 후 **`model-server/02.Database for dashboard/*.sql`만 허용** → 01.data 대용량 SQL 미업로드, 경량 SQL만 사용.  
+  - 백엔드 **기동 시 `load_sales_dataframe()` 호출 제거** → 첫 API 요청 시 지연 로드로 기동 시 메모리 절감.
+- **동기화**: GitHub Actions(`.github/workflows/sync_to_hf.yml`)는 현재 `ajjk1/apple-sales-api`로 푸시. 위 Space가 다른 리포라면 해당 Space 리포로 푸시하도록 워크플로의 `huggingface.co/spaces/...` URL을 수정해야 함.

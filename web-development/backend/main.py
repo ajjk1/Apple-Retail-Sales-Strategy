@@ -399,31 +399,30 @@ get_sales_by_store_by_year = None
 get_sales_by_store_quarterly = None
 get_sales_by_store_quarterly_by_category = None
 get_store_performance_grade = None
-_load_sales_data_file = _MODEL_SERVER / "03.load_sales_data" / "load_sales_data.py" # 엔진 파일 경로 설정
-if _load_sales_data_file.exists(): # 만약 파일이 해당 경로에 존재한다면
-    # (이후 기존 코드 유지)
-
-    # 기존의 문제가 발생한 줄을 아래와 같이 수정합니다 (줄마다 주석)
-
-    try: # 모듈 로드를 시도합니다.
-        # 독립된 if문: 파일 경로가 유효한지 확인합니다.
-        _sales_analysis_file = _MODEL_SERVER / "04.Sales analysis" / "Sales analysis.py"
-        if _sales_analysis_file.exists(): # 경로가 설정되어 있다면
+try: # 모듈 로드를 시도합니다.
+    # 독립된 if문: 파일 경로가 유효한지 확인합니다.
+    _sales_analysis_file = _model_path("04.Sales analysis") / "Sales analysis.py"
+    if _sales_analysis_file.exists(): # 경로가 설정되어 있다면
+        
+        # [해결] 첫 번째는 별칭, 두 번째는 실제 파일 경로(_sales_analysis_file)를 넣어야 식이 완성됩니다.
+        _spec_sales = importlib.util.spec_from_file_location("sales_analysis", _sales_analysis_file)  # 주소 정보를 추가했습니다.
+        
+        # 독립된 if문: 설계도(spec)가 성공적으로 만들어졌을 때만 다음 단계를 진행합니다.
+        if _spec_sales is not None: # 설계도가 존재한다면
+            _sales_module = importlib.util.module_from_spec(_spec_sales) # 모듈 객체를 생성합니다.
+            _spec_sales.loader.exec_module(_sales_module) # 모듈 내용을 실제로 실행합니다.
             
-            # [해결] 첫 번째는 별칭, 두 번째는 실제 파일 경로(_sales_analysis_file)를 넣어야 식이 완성됩니다.
-            _spec_sales = importlib.util.spec_from_file_location("sales_analysis", _sales_analysis_file)  # 주소 정보를 추가했습니다.
-            
-            # 독립된 if문: 설계도(spec)가 성공적으로 만들어졌을 때만 다음 단계를 진행합니다.
-            if _spec_sales is not None: # 설계도가 존재한다면
-                _sales_module = importlib.util.module_from_spec(_spec_sales) # 모듈 객체를 생성합니다.
-                _spec_sales.loader.exec_module(_sales_module) # 모듈 내용을 실제로 실행합니다.
-                
-                # 독립된 if문: 로드된 모듈에서 '일꾼(함수)'들을 하나씩 꺼내옵니다.
-                get_store_sales_summary = getattr(_sales_module, "get_store_sales_summary", None)
-                get_sales_box_value = getattr(_sales_module, "get_sales_box_value", None)
-                # ... (이후 동일)
-    except Exception as e: # 독립된 if문: 만약 위 과정에서 에러가 나면 실행됩니다.
-        print(f"[오류 발생] 매출 분석 파일 로드 실패: {e}") # 에러 메시지를 출력합니다.
+            # 독립된 if문: 로드된 모듈에서 '일꾼(함수)'들을 하나씩 꺼내옵니다.
+            get_store_sales_summary = getattr(_sales_module, "get_store_sales_summary", None)
+            get_sales_box_value = getattr(_sales_module, "get_sales_box_value", None)
+            get_sales_by_country_category = getattr(_sales_module, "get_sales_by_country_category", None)
+            get_sales_by_store = getattr(_sales_module, "get_sales_by_store", None)
+            get_sales_by_store_by_year = getattr(_sales_module, "get_sales_by_store_by_year", None)
+            get_sales_by_store_quarterly = getattr(_sales_module, "get_sales_by_store_quarterly", None)
+            get_sales_by_store_quarterly_by_category = getattr(_sales_module, "get_sales_by_store_quarterly_by_category", None)
+            get_store_performance_grade = getattr(_sales_module, "get_store_performance_grade", None)
+except Exception as e: # 독립된 if문: 만약 위 과정에서 에러가 나면 실행됩니다.
+    print(f"[오류 발생] 매출 분석 파일 로드 실패: {e}") # 에러 메시지를 출력합니다.
 
 # Inventory Optimization.py 로드 (안전재고 대시보드 연동)
 # - get_safety_stock_summary: 재고 상태별 건수 (Status: Danger/Normal/Overstock)
@@ -531,20 +530,9 @@ def _run_integration_report():
                 print(f"    data_dir: {(info.get('data_dir') or '')[:80]}...")
             except Exception as e:
                 print(f"    >>> get_data_source_info 오류: {e}")
+        # 데이터프레임은 기동 시 로드하지 않음 (HF 등 메모리 제한 환경 OOM 방지). 첫 API 요청 시 지연 로드.
         if load_sales_dataframe is not None:
-            try:
-                df = load_sales_dataframe()
-                rows = len(df) if df is not None else 0
-                print(f"    로드된 행 수: {rows}")
-                if df is not None and not df.empty:
-                    has_sid = "store_id" in df.columns
-                    has_sname = "Store_Name" in df.columns or "store_name" in df.columns
-                    nstores = int(df["store_id"].nunique()) if has_sid else 0
-                    print(f"    SQL 연동(상점목록): store_id={has_sid}, store_name={has_sname}, 상점 수={nstores}")
-                if rows == 0:
-                    print("    >>> 데이터 없음 - 01.data/*.sql 또는 CSV 확인 필요")
-            except Exception as e:
-                print(f"    >>> 로드 실패: {e}")
+            print(f"    load_sales_dataframe: 지연 로드 (첫 요청 시 로드)")
     print()
 
     # [2] 01.data SQL

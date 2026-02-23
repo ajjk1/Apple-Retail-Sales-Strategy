@@ -1,4 +1,8 @@
+# 대용량/백업 제외 (HF OOM 방지)
 model-server/00.old/
 *.csv
+# 01.data 전체 SQL 제외, 02.Database for dashboard 경량 SQL만 포함
 *.sql
+!model-server/02.Database for dashboard/*.sql
+# 모델 가중치(선택): 필요 시 아래 한 줄 주석 처리
 *.joblib
