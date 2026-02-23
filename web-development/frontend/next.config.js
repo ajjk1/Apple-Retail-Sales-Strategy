@@ -1,12 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Vercel: Settings → Environment Variables 에 BACKEND_URL, NEXT_PUBLIC_API_URL 설정 시 빌드/런타임에 자동 주입. 별도 env 선언 불필요.
+  // rewrites: 환경 변수만 사용. localhost 하드코딩 없음 (Vercel 404/DNS 에러 방지).
+  // 프로덕션: BACKEND_URL 또는 NEXT_PUBLIC_API_URL 필수. 개발: 미설정 시에만 127.0.0.1:8000 사용.
   async rewrites() {
-    const raw =
-      process.env.BACKEND_URL ||
-      process.env.NEXT_PUBLIC_API_URL ||
-      'http://127.0.0.1:8000';
-    const backendUrl = typeof raw === 'string' ? raw.replace(/\/$/, '') : raw;
+    let raw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
+    if (!raw && process.env.NODE_ENV === 'development') {
+      raw = 'http://127.0.0.1:8000';
+    }
+    const backendUrl = typeof raw === 'string' ? raw.replace(/\/$/, '') : '';
     return [
       {
         source: '/api/:path*',

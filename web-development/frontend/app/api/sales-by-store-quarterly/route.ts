@@ -1,20 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/** 백엔드 URL 후보 (서버사이드: BACKEND_URL 우선. 끝 슬래시 제거하여 이중 슬래시 방지) */
+/** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL 만 사용. localhost 폴백 없음 (Vercel 배포 시 env 필수). */
 function getBackendUrls(): string[] {
-  const primary =
-    process.env.BACKEND_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    'http://127.0.0.1:8000';
-  const normalized = typeof primary === 'string' ? primary.replace(/\/$/, '') : primary;
-  const urls = [
-    normalized,
-    'http://localhost:8000',
-    'http://localhost:8001',
-    'http://127.0.0.1:8000',
-    'http://127.0.0.1:8001',
-  ];
-  return Array.from(new Set(urls.filter(Boolean)));
+  const primary = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
+  if (!primary || typeof primary !== 'string') return [];
+  const normalized = primary.replace(/\/$/, '');
+  return [normalized];
 }
 
 export async function GET(request: NextRequest) {

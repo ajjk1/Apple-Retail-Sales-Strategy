@@ -1,5 +1,6 @@
 'use client';
 
+// 클라이언트 컴포넌트: API 베이스는 process.env.NEXT_PUBLIC_API_URL 만 사용. BACKEND_URL 은 서버(rewrites/API route) 전용.
 // WebGPU 미지원 환경에서 Three.js/글로브 오류 방지 (Cannot read properties of undefined reading 'VERTEX')
 if (typeof window !== 'undefined') {
   const w = window as unknown as { GPUShaderStage?: { VERTEX: number; FRAGMENT: number; COMPUTE: number }; GPUBufferUsage?: Record<string, number> };
@@ -106,7 +107,7 @@ const PIE_YEARS = [2020, 2021, 2022, 2023, 2024] as const;
 const QUANTITY_UNIT = '대';
 const QUANTITY_LABEL = `수량(단위: ${QUANTITY_UNIT})`;
 
-/** 클라이언트용 백엔드 베이스 URL. NEXT_PUBLIC_ 접두사 필수(브라우저 노출). 끝 슬래시 제거. */
+/** 클라이언트 전용: NEXT_PUBLIC_API_URL 만 사용. localhost 폴백 없음 (Vercel 404/DNS 에러 방지). */
 function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
@@ -114,14 +115,12 @@ function getApiBase(): string {
   return '';
 }
 
-const API_TIMEOUT_MS = 20000; // 백엔드 첫 로드가 느릴 수 있음
+const API_TIMEOUT_MS = 20000;
 
-/** API 호출: 상대경로(프록시) 우선 → localhost 폴백. 로컬에서 백엔드 데이터가 보이도록. */
+/** API 호출: NEXT_PUBLIC_API_URL 사용. 미설정 시 상대경로만. localhost 미사용. */
 async function apiGet<T = unknown>(path: string): Promise<T | null> {
   const fixed = getApiBase();
-  const bases = fixed
-    ? ['', 'http://localhost:8000', 'http://127.0.0.1:8000', fixed]
-    : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
+  const bases = fixed ? [fixed] : [''];
   for (const base of bases) {
     try {
       const url = base ? `${base}${path}` : path;
@@ -470,11 +469,9 @@ export default function Home() {
   }, [showSafetyStockDashboard, selectedYear]);
 
   useEffect(() => {
-    // 상대경로(Next.js 프록시) 우선 → localhost 폴백. 로컬에서 백엔드 데이터가 보이도록.
+    // NEXT_PUBLIC_API_URL 사용. 미설정 시 상대경로 /api/health 만 시도. localhost 미사용.
     const fixed = getApiBase();
-    const bases = fixed
-      ? ['', 'http://localhost:8000', 'http://127.0.0.1:8000', fixed]
-      : ['', 'http://localhost:8000', 'http://127.0.0.1:8000'];
+    const bases = fixed ? [fixed] : [''];
     let cancelled = false;
     const timeoutMs = 20000; // HF cold start 등으로 여유 있게
     const tryOne = (base: string): Promise<void> => {
@@ -539,14 +536,9 @@ export default function Home() {
         .then(setDataAndClearError);
 
     const base = getApiBase();
-    // 상대경로(프록시) 우선 → localhost 폴백. 로컬에서 데이터가 보이도록.
-    const urls = base
-      ? ['/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data', `${base}/api/apple-data`]
-      : ['/api/apple-data', 'http://localhost:8000/api/apple-data', 'http://127.0.0.1:8000/api/apple-data'];
-    tryFetch(urls[0])
-      .catch(() => (urls[1] ? tryFetch(urls[1]) : Promise.reject(new Error('No fallback'))))
-      .catch(() => (urls[2] ? tryFetch(urls[2]) : Promise.reject(new Error('No fallback'))))
-      .catch(() => (urls[3] ? tryFetch(urls[3]) : Promise.reject(new Error('No fallback'))))
+    // NEXT_PUBLIC_API_URL 사용. 설정 시 해당 URL만, 미설정 시 상대경로만. localhost 미사용.
+    const url = base ? `${base}/api/apple-data` : '/api/apple-data';
+    tryFetch(url)
       .catch((err: Error) => {
         if (!cancelled && err?.name !== 'AbortError') setError('백엔드 연결 실패');
       })
