@@ -1,9 +1,18 @@
 /** @type {import('next').NextConfig} */
-// /api/* 요청은 rewrites로 백엔드로 전달. Vercel 배포 시 환경 변수와 무관하게 항상 HF Space URL만 사용 (Target: localhost 방지).
+// /api/* 요청은 rewrites로 백엔드로 전달. Vercel/프로덕션에서는 destination을 리터럴 HF URL로만 고정 (Target: localhost 방지).
 const PRODUCTION_BACKEND_URL = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
 
-// Vercel 빌드 시 NEXT_PUBLIC_API_URL 미정의/ localhost 시 경고 및 fallback 안내
-if (process.env.VERCEL === '1') {
+// 프로덕션 rewrites: 하드코딩된 HF URL만 사용 (환경 변수 미참조로 빌드/런타임에서 localhost로 바뀔 가능성 제거)
+const PRODUCTION_REWRITES = [
+  { source: '/api/:path*', destination: `${PRODUCTION_BACKEND_URL}/api/:path*` },
+  { source: '/docs', destination: `${PRODUCTION_BACKEND_URL}/docs` },
+  { source: '/docs/:path*', destination: `${PRODUCTION_BACKEND_URL}/docs/:path*` },
+  { source: '/openapi.json', destination: `${PRODUCTION_BACKEND_URL}/openapi.json` },
+];
+
+// Vercel 빌드 시 API URL 유효성 체크 및 명확한 콘솔 메시지
+function assertProductionRewriteDestination() {
+  if (process.env.VERCEL !== '1') return;
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.BACKEND_URL || '';
   const isUnsetOrLocalhost =
     !apiUrl ||
@@ -12,14 +21,20 @@ if (process.env.VERCEL === '1') {
     /localhost|127\.0\.0\.1|\[::1\]/i.test(apiUrl);
   if (isUnsetOrLocalhost) {
     console.warn(
-      '[Vercel build] NEXT_PUBLIC_API_URL (or BACKEND_URL) is not set or points to localhost. Rewrites will use fallback:',
+      '[Vercel build] NEXT_PUBLIC_API_URL (or BACKEND_URL) is not set or points to localhost. Rewrites use fixed destination:',
       PRODUCTION_BACKEND_URL
     );
   }
-}
-
-function isProductionLike() {
-  return process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';
+  // destination이 절대 localhost가 아님을 검증
+  const hasInvalidDestination = PRODUCTION_REWRITES.some(
+    (r) =>
+      typeof r.destination === 'string' &&
+      /localhost|127\.0\.0\.1|\[::1\]/i.test(r.destination)
+  );
+  if (hasInvalidDestination) {
+    console.error('[Vercel build] FATAL: Rewrite destination must not be localhost. Check next.config.js.');
+    throw new Error('Invalid rewrite destination: localhost is not allowed in production.');
+  }
 }
 
 function isUnsafeBackendUrl(url) {
@@ -43,21 +58,26 @@ function getRewrites(backendUrl) {
 
 const nextConfig = {
   async rewrites() {
-    // Vercel 환경: 환경 변수와 무관하게 항상 HF Space를 destination으로 사용 (DNS_HOSTNAME_RESOLVED_PRIVATE 방지)
-    if (process.env.VERCEL === '1') {
-      return getRewrites(PRODUCTION_BACKEND_URL);
+    // Vercel 또는 NODE_ENV=production: 리터럴 PRODUCTION_REWRITES만 사용 (process.env 미사용)
+    if (process.env.VERCEL === '1' || process.env.NODE_ENV === 'production') {
+      assertProductionRewriteDestination();
+      return PRODUCTION_REWRITES;
     }
-    // 그 외 프로덕션: env가 유효한 공개 URL일 때만 사용, 아니면 HF Space fallback
-    if (isProductionLike()) {
-      const raw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
-      const url = !isUnsafeBackendUrl(raw) ? raw : PRODUCTION_BACKEND_URL;
-      return getRewrites(url);
-    }
-    // 로컬 개발: env 우선, 없거나 localhost면 개발용 fallback (환경 변수로 변경 가능)
+    // 로컬 개발: env 우선, 없거나 localhost면 개발용 fallback
     const devRaw = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL;
     const devUrl = !isUnsafeBackendUrl(devRaw) ? devRaw : process.env.DEV_BACKEND_URL || 'http://127.0.0.1:8000';
     return getRewrites(devUrl);
   },
 };
+
+// 빌드 시점( config 로드 시) Vercel 환경에서 destination 유효성 검사
+if (process.env.VERCEL === '1') {
+  try {
+    assertProductionRewriteDestination();
+  } catch (e) {
+    console.error('[next.config.js]', e.message);
+    throw e;
+  }
+}
 
 module.exports = nextConfig;

@@ -1,6 +1,7 @@
 /**
  * 클라이언트 전용: 백엔드 베이스 URL.
- * NEXT_PUBLIC_API_URL 사용. 미설정/ localhost 시 vercel.app에서는 환경 변수 NEXT_PUBLIC_FALLBACK_BACKEND_URL 또는 상수 fallback 사용.
+ * API 경로는 반드시 '/api/...' 상대 경로로 호출하면 next.config.js rewrites 규칙(source: /api/:path*)과 일치합니다.
+ * NEXT_PUBLIC_API_URL 미설정/ localhost 시 vercel.app에서는 fallback 사용.
  */
 const API_BASE_FALLBACK =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_FALLBACK_BACKEND_URL) ||

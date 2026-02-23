@@ -224,7 +224,7 @@ export default function RecommendationPage() {
     const STORE_LIST_TIMEOUT_MS = 12000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), STORE_LIST_TIMEOUT_MS);
-    const url = typeof window !== 'undefined' && window.location.origin ? `${window.location.origin}/api/store-list` : '/api/store-list';
+    const url = '/api/store-list';
     fetch(url, { signal: controller.signal, cache: 'no-store' })
       .then((res) => (res?.ok ? res.json() : null))
       .then((json: { stores?: Store[] } | null) => {
