@@ -53,9 +53,12 @@ def _normalize_text_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_data_source_info() -> Dict[str, Any]:
-    """현재 데이터가 어디서 로드되는지(01.data SQL vs CSV) 반환."""
-    sql_dir = _MODEL_SERVER / "01.data"
-    sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
+    """현재 데이터가 어디서 로드되는지(02.Database for dashboard / 01.data SQL / CSV) 반환."""
+    dashboard_dir = _MODEL_SERVER / "02.Database for dashboard"
+    sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+    sql_dir = dashboard_dir if sql_files else (_MODEL_SERVER / "01.data")
+    if not sql_files:
+        sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
 
     csv_candidates = [
         _MODEL_SERVER / "data" / "Apple_Retail_Sales_Dataset_Modified.csv",
@@ -204,8 +207,12 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
     if _CACHE_DF is not None and not force_reload:
         return _CACHE_DF
 
-    sql_dir = _MODEL_SERVER / "01.data"
-    sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
+    # 배포용 경량 데이터 우선 (Hugging Face 등): 02.Database for dashboard
+    dashboard_dir = _MODEL_SERVER / "02.Database for dashboard"
+    sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+    if not sql_files:
+        sql_dir = _MODEL_SERVER / "01.data"
+        sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
 
     df: Optional[pd.DataFrame] = None
     if sql_files:
@@ -244,198 +251,4 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
 
     _CACHE_DF = df
     return df
-
-"""
-모델 서버 · 대시보드 공통 판매 데이터 로더
-- SQL 파일(01~10) 우선 로드, 없으면 CSV 폴백
-- data/ 또는 01.data/ 경로 자동 탐지
-- prediction model, Inventory Optimization, Sales analysis, 대시보드 API에서 동일 데이터 소스 사용
-"""
-
-import csv
-import io
-import re
-import sqlite3
-from pathlib import Path
-
-import pandas as pd
-
-
-def _strip_wrapping_quotes(s: str) -> str:
-    """문자열 양끝의 ' 또는 \" 를 제거하고 공백을 정리."""
-    if s is None:
-        return s
-    if not isinstance(s, str):
-        return s
-    t = s.strip()
-    if len(t) >= 2 and ((t[0] == "'" and t[-1] == "'") or (t[0] == '"' and t[-1] == '"')):
-        t = t[1:-1].strip()
-    return t
-
-
-def _normalize_text_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """SQL/CSV 로드 결과로 생길 수 있는 따옴표 포함 문자열을 정규화."""
-    if df is None or df.empty:
-        return df
-    obj_cols = df.select_dtypes(include=["object"]).columns
-    for c in obj_cols:
-        try:
-            df[c] = df[c].map(_strip_wrapping_quotes)
-        except Exception:
-            continue
-    return df
-
-
-# model-server 기준 경로
-_MODEL_SERVER = Path(__file__).resolve().parent
-_DATA_DIR = None
-_SQL_FILES = None
-_CSV_CANDIDATES = None
-
-
-def _get_data_dir() -> Path:
-    """data 또는 01.data 폴더 중 존재하는 경로 반환."""
-    global _DATA_DIR
-    if _DATA_DIR is not None:
-        return _DATA_DIR
-    for name in ("01.data", "data"):
-        p = _MODEL_SERVER / name
-        if p.exists() and p.is_dir():
-            _DATA_DIR = p
-            return _DATA_DIR
-    _DATA_DIR = _MODEL_SERVER / "data"
-    return _DATA_DIR
-
-
-def _get_sql_files():
-    """Apple_Retail_Sales_Dataset_Modified_01.sql ~ _10.sql 목록."""
-    global _SQL_FILES
-    if _SQL_FILES is not None:
-        return _SQL_FILES
-    d = _get_data_dir()
-    _SQL_FILES = [d / f"Apple_Retail_Sales_Dataset_Modified_{i:02d}.sql" for i in range(1, 11)]
-    return _SQL_FILES
-
-
-def _get_csv_candidates():
-    """CSV 폴백 후보 경로."""
-    global _CSV_CANDIDATES
-    if _CSV_CANDIDATES is not None:
-        return _CSV_CANDIDATES
-    d = _get_data_dir()
-    base = _MODEL_SERVER.parent
-    _CSV_CANDIDATES = [
-        d / "Apple_Retail_Sales_Dataset_Modified.csv",
-        d / "data_02_inventory_final.csv",
-        base / "web-development" / "data_02_inventory_final.csv",
-    ]
-    return _CSV_CANDIDATES
-
-
-def _parse_insert_values_from_file(content: str):
-    """INSERT INTO sales_data (...) VALUES (row1), (row2), ... 에서 row 리스트 추출 (14컬럼). 단일 튜플 파싱은 _parse_insert_values 사용."""
-    match = re.search(
-        r"INSERT\s+INTO\s+sales_data\s+\([^)]+\)\s+VALUES\s+(.+)",
-        content,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if not match:
-        return []
-    values_part = match.group(1).strip().rstrip(");").strip()
-    if not values_part:
-        return []
-    # 행 구분: "), (" 또는 "),\n(" 등 공백/줄바꿈 허용
-    parts = re.split(r"\)\s*,\s*\(", values_part)
-    rows = []
-    for part in parts:
-        part = part.strip().strip("()")
-        if not part:
-            continue
-        try:
-            # SQL VALUES 구문은 콤마 뒤에 공백이 포함됨: ", 'ST-53', ..."
-            # skipinitialspace=True 를 주지 않으면 quotechar가 무시되어 "'ST-53'" 형태로 남을 수 있음
-            reader = csv.reader(io.StringIO(part), quotechar="'", doublequote=True, skipinitialspace=True)
-            row = next(reader)
-            if len(row) >= 14:
-                rows.append(tuple(row[:14]))
-        except Exception:
-            continue
-    return rows
-
-
-# 캐시: 파일 수정 시에만 재로드
-_cache_df = None
-_cache_mtime = 0.0
-
-
-def _source_mtime() -> float:
-    """SQL 파일 최신 수정 시각 (CSV 미참조)."""
-    mtimes = []
-    for p in _get_sql_files():
-        if p.exists():
-            mtimes.append(p.stat().st_mtime)
-    return max(mtimes, default=0.0)
-
-
-def load_sales_dataframe():
-    """
-    SQL 파일(01.data/Apple_Retail_Sales_Dataset_Modified_01~10.sql) 전용 로드.
-    VALUES 전체 행 파싱으로 모든 행 로드 (카테고리별 매출 등 9개 카테고리 반영).
-    반환 DataFrame 컬럼:
-    sale_id, sale_date, store_id, product_id, quantity, product_name,
-    category_id, launch_date, price, category_name, store_name, city->City, country->Country,
-    store_name->Store_Name, product_name->Product_Name, total_sales.
-    """
-    global _cache_df, _cache_mtime
-    mtime = _source_mtime()
-    if mtime > 0 and _cache_df is not None and _cache_mtime == mtime:
-        return _cache_df.copy()
-
-    _cache_mtime = mtime
-    sql_files = _get_sql_files()
-    df = _load_from_sql_files(sql_files)
-
-    if df is None or df.empty:
-        _cache_df = None
-        return None
-
-    df = df.copy()
-    rename_map = {
-        "city": "City",
-        "country": "Country",
-        "store_name": "Store_Name",
-        "product_name": "Product_Name",
-    }
-    df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns}, inplace=True)
-    df = _normalize_text_columns(df)
-    for col in ("quantity", "total_sales", "price"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    _cache_df = df
-    return df.copy()
-
-
-def get_data_source_info():
-    """대시보드 표시용: 현재 데이터 소스 정보 (SQL 전용, CSV 미참조)."""
-    d = _get_data_dir()
-    sql_files = _get_sql_files()
-    has_sql = any(p.exists() for p in sql_files)
-    return {
-        "quantity_unit": QUANTITY_UNIT,
-        "data_dir": str(d),
-        "source": "sql" if has_sql else "none",
-        "sql_file_count": sum(1 for p in sql_files if p.exists()),
-        "csv_path": None,
-    }
-
-
-if __name__ == "__main__":
-    """실행 시 데이터 소스 정보와 로드 결과를 출력."""
-    info = get_data_source_info()
-    print("Data source:", info)
-    df = load_sales_dataframe()
-    if df is not None:
-        print("Loaded rows:", len(df), "| columns:", list(df.columns)[:12])
-    else:
-        print("No data loaded.")
 
