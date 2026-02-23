@@ -1,5 +1,11 @@
 {
   "framework": "nextjs",
   "buildCommand": "npm run build",
-  "installCommand": "npm install"
+  "installCommand": "npm install",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://apple-retail-study-apple-retail-sales-strategy.hf.space/api/:path*" },
+    { "source": "/docs", "destination": "https://apple-retail-study-apple-retail-sales-strategy.hf.space/docs" },
+    { "source": "/docs/:path*", "destination": "https://apple-retail-study-apple-retail-sales-strategy.hf.space/docs/:path*" },
+    { "source": "/openapi.json", "destination": "https://apple-retail-study-apple-retail-sales-strategy.hf.space/openapi.json" }
+  ]
 }
