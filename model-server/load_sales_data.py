@@ -232,6 +232,13 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
                 df = None
 
     if df is None or getattr(df, "empty", True):
+        # Hugging Face 등 배포 환경에서 원인 파악용 로그 (SQL/CSV 모두 없을 때)
+        print(
+            f"[load_sales_data] 데이터 없음. 시도 경로: "
+            f"02.Database for dashboard={dashboard_dir.exists()}, "
+            f"01.data={(_MODEL_SERVER / '01.data').exists()}, "
+            f"sql_files={len(sql_files) if sql_files else 0}개"
+        )
         _CACHE_DF = None
         return None
 

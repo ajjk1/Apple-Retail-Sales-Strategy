@@ -21,6 +21,9 @@
   - similar_store_recommendations: 유사 상점 기반 (Cosine Similarity)
   - latent_demand_recommendations: 잠재 수요 (SVD/MF)
   - trend_recommendations: 트렌드 분석 (판매 증가율)
+
+[모듈화] 본 파일은 load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
+- 상점 목록·추천·매출·피봇·상관관계 등 모두 동일 SQL 기반. Import 실패 시 폴백 함수 (독립된 if문).
 """
 
 import sys
@@ -32,13 +35,21 @@ from collections import defaultdict
 
 # [4.1.1] 유저(상점) 맞춤형 추천: inventory_health는 main.py에서 Inventory Optimization 결과를 넘겨받음
 
+# 모델 서버 루트 (load_sales_data.py 위치)
 _MODEL_SERVER = Path(__file__).resolve().parent.parent
 if str(_MODEL_SERVER) not in sys.path:
     sys.path.insert(0, str(_MODEL_SERVER))
+# load_sales_data 참조 (실패 시 폴백 함수, 독립된 if문)
+load_sales_dataframe = None
 try:
-    from load_sales_data import load_sales_dataframe
-except Exception:
+    from load_sales_data import load_sales_dataframe as _rt_loader
+except ImportError:
+    _rt_loader = None
+if _rt_loader is not None:
+    load_sales_dataframe = _rt_loader
+if load_sales_dataframe is None:
     def load_sales_dataframe():
+        """Import 실패 시 폴백: 항상 None 반환."""
         return None
 
 

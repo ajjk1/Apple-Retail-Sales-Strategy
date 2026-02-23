@@ -3,7 +3,10 @@
 - arima_model.joblib (ARIMA)를 사용한 2025년 판매 수량 예측.
 - 2020~2024 연도별 판매 수량·합계 및 2025 예측: get_sales_quantity_forecast()
 - 도시/스토어/국가/대륙별 카테고리 판매 수량: 2020~2024 기준.
-- 데이터 소스: 모델 서버 공통 로더 (SQL 01~10 또는 CSV) ↔ 대시보드 연동
+
+[모듈화] 데이터 소스: load_sales_data.py 의 load_sales_dataframe() 만 사용.
+- SQL(01.data / 02.Database for dashboard) 또는 CSV 로드 → 대시보드·FastAPI와 동일 소스.
+- Import 실패 시 내장 폴백 함수로 None 반환 (독립된 if문으로 분기).
 """
 
 import sys
@@ -12,21 +15,33 @@ from pathlib import Path
 
 # 프로젝트 루트 기준 경로 (ajjk1)
 BASE = Path(__file__).resolve().parent.parent.parent
+# 모델 서버 루트 (load_sales_data.py 위치)
 _MODEL_SERVER = Path(__file__).resolve().parent.parent
+# ARIMA 모델 파일 경로 (prediction model 폴더 우선)
 ARIMA_MODEL_PATH = _MODEL_SERVER / "prediction model" / "arima_model.joblib"
 if not ARIMA_MODEL_PATH.exists():
     ARIMA_MODEL_PATH = Path(__file__).resolve().parent / "arima_model.joblib"
 
-# 모델 서버 공통 데이터 로더 (SQL ↔ 대시보드 동일 소스)
+# 모델 서버 공통 데이터 로더: load_sales_data.py 참조 (독립된 if문 사용)
 if str(_MODEL_SERVER) not in sys.path:
     sys.path.insert(0, str(_MODEL_SERVER))
+# load_sales_dataframe, QUANTITY_UNIT: load_sales_data 모듈에서 로드 (실패 시 폴백, 독립된 if문)
+load_sales_dataframe = None
+QUANTITY_UNIT = "대"
+_imported_loader = None
+_imported_unit = "대"
 try:
-    from load_sales_data import load_sales_dataframe, QUANTITY_UNIT
+    from load_sales_data import load_sales_dataframe as _imported_loader
+    from load_sales_data import QUANTITY_UNIT as _imported_unit
 except ImportError:
+    _imported_loader = None
+if _imported_loader is not None:
+    load_sales_dataframe = _imported_loader
+if _imported_unit is not None:
+    QUANTITY_UNIT = _imported_unit
+if load_sales_dataframe is None:
     def load_sales_dataframe():
-        return None
-    QUANTITY_UNIT = "대"
-    def load_sales_dataframe():
+        """Import 실패 시 폴백: 항상 None 반환."""
         return None
 
 _arima_model_cache = None

@@ -1,3 +1,26 @@
+"""
+Apple Retail API — Hugging Face Spaces 백엔드 + Vercel 프론트 연동
+
+[1] 모듈화
+- prediction model, Sales analysis, Inventory Optimization, Real-time dashboard 는 모두
+  load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
+- main.py 는 위 모듈들을 importlib 로 동적 로드한 뒤, 각 모듈의 함수를 FastAPI 라우트에서 호출합니다.
+
+[2] Main 통합
+- FastAPI(uvicorn) 로 서버 구동. 각 분석 모델의 결과를 반환하는 API 엔드포인트를 제공합니다.
+- /api/apple-data, /api/city-category-pie, /api/sales-summary, /api/safety-stock 등
+  모든 엔드포인트는 main.py 에서 해당 모듈 함수를 호출하여 JSON 응답을 반환합니다.
+
+[3] CORS 설정
+- Vercel 도메인(https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app/ 등)에서
+  브라우저가 이 API에 접근할 수 있도록 CORSMiddleware 로 allow_origins·allow_origin_regex 설정.
+- allow_credentials, allow_methods, allow_headers 도 허용하여 프론트-백 연동이 가능하도록 합니다.
+
+[4] Hugging Face Spaces 실행
+- Dockerfile 에서 uvicorn main:app --host 0.0.0.0 --port 7860 으로 기동합니다.
+- 0.0.0.0 바인딩으로 외부에서 Space URL 로 접근 가능합니다.
+"""
+
 from fastapi import FastAPI, Request  # FastAPI 프레임워크를 불러옵니다.
 from fastapi.middleware.cors import CORSMiddleware  # 다른 도메인(Next.js)의 접속을 허용하기 위해 불러옵니다.
 from starlette.middleware.gzip import GZipMiddleware
@@ -15,7 +38,8 @@ import io
 import re
 from typing import Any, Dict, List, Optional
 
-app = FastAPI(title="Apple Retail API")  # FastAPI 애플리케이션 객체를 생성합니다.
+# FastAPI 애플리케이션 객체 생성 (제목: Apple Retail API)
+app = FastAPI(title="Apple Retail API")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _MODEL_SERVER = _PROJECT_ROOT / "model-server"
@@ -506,6 +530,9 @@ def _run_integration_report():
     print(sep)
     print("모델 서버 연동 진단")
     print(sep)
+    # Hugging Face Docker: CWD=/app/web-development/backend, _PROJECT_ROOT=/app
+    if _PROJECT_ROOT.resolve() == Path("/app"):
+        print("[Hugging Face Docker 환경] _PROJECT_ROOT=/app")
     print(f"프로젝트 루트: {_PROJECT_ROOT}")
     print(f"MODEL_SERVER:  {_MODEL_SERVER}")
     print(f"존재 여부:     {_MODEL_SERVER.exists()}")
@@ -691,9 +718,9 @@ def _fallback_safety_stock_forecast_chart(target_product: str | None = None):
 
     return {"product_name": target, "chart_data": chart_data, "method": "fallback_ma_trend"}
 
-# if문 사용: 브라우저 보안 정책인 CORS 설정을 독립적으로 관리합니다.
-# Vercel·HF 배포 시 프론트 도메인 허용 (allow_origin_regex로 *.vercel.app 등)
+# CORS: 브라우저 보안 정책. Vercel 프론트에서 이 API 호출 시 도메인 허용 (독립된 if문으로 미들웨어 등록)
 if True:
+    # allow_origins: 허용할 Origin 목록 (정확히 일치하는 도메인)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -711,10 +738,10 @@ if True:
             "http://192.168.0.43:3001",
             "https://apple-retail-sales-strategy.vercel.app",
             "https://apple-retail-sales-strategy-k1kp94g4f-ajjk1.vercel.app",
-            # 단일 HTML을 file:// 로 열 때 브라우저가 Origin: null 로 보냄 → 허용
             "null",
         ],
-        allow_origin_regex=r"https://.*\.vercel\.app|http://192\.168\.\d+\.\d+:\d+",  # Vercel 프리뷰/기타 + 로컬 네트워크
+        # allow_origin_regex: *.vercel.app 및 192.168.x.x 로컬 네트워크
+        allow_origin_regex=r"https://.*\.vercel\.app|http://192\.168\.\d+\.\d+:\d+",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

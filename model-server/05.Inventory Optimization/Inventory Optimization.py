@@ -52,6 +52,10 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   - 데이터 소스: SQL 전용(load_sales_dataframe → 01.data/*.sql). 모델: arima_model.joblib 전용.
   - [Inventory Action Center] 전용 로직은 본 파일에만 두고, UI↔API↔함수 매핑 문서화.
 ----------------------------------------------------------------------
+
+[모듈화] 본 파일은 load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
+- SQL(01.data / 02.Database for dashboard) 전용. Import 실패 시 폴백 함수로 None 반환 (독립된 if문).
+----------------------------------------------------------------------
 """
 
 import sys
@@ -61,13 +65,21 @@ import numpy as np
 from pathlib import Path
 from typing import Any
 
+# 모델 서버 루트 (load_sales_data.py 위치)
 _MODEL_SERVER = Path(__file__).resolve().parent.parent
 if str(_MODEL_SERVER) not in sys.path:
     sys.path.insert(0, str(_MODEL_SERVER))
+# load_sales_data 참조 (실패 시 폴백 함수 사용, 독립된 if문)
+load_sales_dataframe = None
 try:
-    from load_sales_data import load_sales_dataframe
+    from load_sales_data import load_sales_dataframe as _inv_loader
 except ImportError:
+    _inv_loader = None
+if _inv_loader is not None:
+    load_sales_dataframe = _inv_loader
+if load_sales_dataframe is None:
     def load_sales_dataframe():
+        """Import 실패 시 폴백: 항상 None 반환."""
         return None
 
 # ---------------------------------------------------------------------------

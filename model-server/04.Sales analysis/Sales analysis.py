@@ -35,6 +35,11 @@
   데이터 소스: _get_df() → load_sales_dataframe (model-server/load_sales_data.py) → SQL(01~10) 또는 CSV.
   새 함수 추가 시: backend/main.py 에서 getattr(_sales_module, "함수명", None) 등록 후 새 라우트 추가.
 ----------------------------------------------------------------------
+
+[모듈화] 본 파일은 load_sales_data.py 만 참조하여 데이터를 읽습니다.
+- _get_df() 가 load_sales_dataframe() 을 호출 → SQL(01.data / 02.Database for dashboard) 또는 CSV.
+- 독립된 if문: Import 성공/실패 분리 처리.
+----------------------------------------------------------------------
 """
 
 import re
@@ -43,10 +48,12 @@ import importlib.util
 import pandas as pd
 from pathlib import Path
 
-# 모델 서버 공통 로더 연동 (SQL ↔ 대시보드 동일 데이터)
+# 모델 서버 루트 (load_sales_data.py 위치)
 _MODEL_SERVER = Path(__file__).resolve().parent.parent
 if str(_MODEL_SERVER) not in sys.path:
     sys.path.insert(0, str(_MODEL_SERVER))
+# load_sales_data 참조 (실패 시 _load_sales_dataframe=None, 독립된 if문으로 분기)
+_load_sales_dataframe = None
 try:
     from load_sales_data import load_sales_dataframe as _load_sales_dataframe
 except ImportError:
