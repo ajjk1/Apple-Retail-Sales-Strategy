@@ -528,6 +528,27 @@ export default function Home() {
   const [inventoryComments, setInventoryComments] = useState<{ store_name: string; product_name?: string; comment: string; author: string; created_at: string }[]>([]);
   const [inventoryCommentsLoading, setInventoryCommentsLoading] = useState(false);
   const [saveCommentLoading, setSaveCommentLoading] = useState(false);
+  const overstockTop5 = useMemo(
+    () =>
+      (safetyStockInventoryList ?? [])
+        .map((row) => {
+          const inventory = Number(row.Inventory) || 0;
+          const safety = Number(row.Safety_Stock) || 0;
+          const overstockQty = inventory - safety;
+          const status = (row.Status ?? '').trim();
+          const frozen = Number(row.Frozen_Money) || 0;
+          return {
+            name: (row.Store_Name ?? '').trim() || '—',
+            overstock_qty: overstockQty > 0 ? overstockQty : 0,
+            frozen,
+            status,
+          };
+        })
+        .filter((r) => r.status === '과잉' && r.overstock_qty > 0)
+        .sort((a, b) => b.overstock_qty - a.overstock_qty)
+        .slice(0, 5),
+    [safetyStockInventoryList],
+  );
   const [showDemandDashboard, setShowDemandDashboard] = useState(false);
   const [forecastData, setForecastData] = useState<{
     yearly_quantity: { year: number; quantity: number }[];
@@ -1657,6 +1678,79 @@ export default function Home() {
                       </p>
                     </div>
                   </div>
+
+                  {/* 과잉 재고 현황: 과잉 재고량 기준 Top 5 (막대 + 라인) */}
+                  {overstockTop5.length > 0 && (
+                    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+                      <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">과잉 재고 현황</h3>
+                      <p className="text-xs text-[#86868b] mb-3">
+                        과잉 재고량 기준 Top 5 매장을 기준으로, Frozen Money(₩)와 과잉 재고 수량(대)을 함께 보여줍니다.
+                      </p>
+                      <div className="w-full h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <ComposedChart data={overstockTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                            <XAxis
+                              dataKey="name"
+                              tick={{ fontSize: 11 }}
+                              interval={0}
+                              tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                            />
+                            <YAxis
+                              yAxisId="left"
+                              tick={{ fontSize: 11 }}
+                              stroke="#6e6e73"
+                              tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
+                            />
+                            <YAxis
+                              yAxisId="right"
+                              orientation="right"
+                              tick={{ fontSize: 11 }}
+                              stroke="#6e6e73"
+                              tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}대`}
+                            />
+                            <Tooltip
+                              formatter={(value: number, name: string, props: { payload?: any }) => {
+                                if (name === 'frozen') {
+                                  return [`₩${(Number(value) || 0).toLocaleString()}`, 'Frozen Money'];
+                                }
+                                if (name === 'overstock_qty') {
+                                  return [`${(Number(value) || 0).toLocaleString()}대`, '과잉 재고 수량'];
+                                }
+                                return [value, name];
+                              }}
+                              labelFormatter={(label) => `매장: ${label}`}
+                            />
+                            <Bar yAxisId="left" dataKey="frozen" radius={[4, 4, 0, 0]} name="Frozen Money">
+                              {overstockTop5.map((_, index) => (
+                                <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                              ))}
+                            </Bar>
+                            <Line
+                              yAxisId="right"
+                              type="monotone"
+                              dataKey="overstock_qty"
+                              stroke="#111827"
+                              strokeWidth={2}
+                              dot={(props) => {
+                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                if (cx == null || cy == null) return null;
+                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
+                              }}
+                              activeDot={(props) => {
+                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                if (cx == null || cy == null) return null;
+                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
+                              }}
+                              name="과잉 재고 수량"
+                            />
+                          </ComposedChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 구역 2 & 3: 좌측 매장별 재고 막대 그래프 · 우측 관리자 코멘트 */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
