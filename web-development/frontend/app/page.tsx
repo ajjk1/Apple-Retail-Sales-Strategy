@@ -466,10 +466,6 @@ export default function Home() {
   const [dataSourceInfo, setDataSourceInfo] = useState<{ data_dir: string; source: string; sql_file_count: number; csv_path: string | null } | null>(null);
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
   const [healthCheckTrigger, setHealthCheckTrigger] = useState(0);
-  const [integrationStatus, setIntegrationStatus] = useState<{
-    modules_loaded?: { load_sales_data?: boolean; prediction_model?: boolean; sales_analysis?: boolean; inventory_optimization?: boolean; realtime_dashboard?: boolean };
-    data_source?: { source?: string; sql_file_count?: number };
-  } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
 
   // 파이차트 패널 열릴 때 수요 박스와 같은 연도로 맞춤
@@ -832,42 +828,6 @@ export default function Home() {
   useEffect(() => {
     apiGet<{ data_dir: string; source: string; sql_file_count: number; csv_path: string | null }>('/api/data-source').then(setDataSourceInfo);
   }, []);
-
-  // 모델 서버 연동 상태 (quick-status 우선·빠름, "다시 확인" 시 integration-status)
-  const RETRY_DELAY_MS = 1500;
-  const MAX_RETRIES = 1;
-  const fetchIntegrationStatus = useCallback((retryCount = 0, useFullCheck = false) => {
-    if (backendConnected !== true) return;
-    const url = (retryCount > 0 || useFullCheck) ? '/api/integration-status' : '/api/quick-status';
-    apiGet<{
-      modules_loaded?: { load_sales_data?: boolean; prediction_model?: boolean; sales_analysis?: boolean; inventory_optimization?: boolean; realtime_dashboard?: boolean };
-      data_source?: { source?: string; sql_file_count?: number };
-    }>(url)
-      .then((v) => {
-        if (v) {
-          setIntegrationStatus(v);
-        } else if (retryCount < MAX_RETRIES) {
-          console.warn('[IntegrationStatus] 응답 없음, 재시도 예정:', retryCount + 1);
-          setTimeout(() => fetchIntegrationStatus(retryCount + 1), RETRY_DELAY_MS);
-        } else {
-          console.warn('[IntegrationStatus] 재시도 후에도 응답 없음');
-        }
-      })
-      .catch((err) => {
-        console.warn('[IntegrationStatus] 요청 실패:', err);
-        if (retryCount < MAX_RETRIES) {
-          setTimeout(() => fetchIntegrationStatus(retryCount + 1), RETRY_DELAY_MS);
-        }
-      });
-  }, [backendConnected]);
-
-  useEffect(() => {
-    if (backendConnected !== true) {
-      setIntegrationStatus(null);
-      return;
-    }
-    fetchIntegrationStatus();
-  }, [backendConnected, healthCheckTrigger, fetchIntegrationStatus]);
 
   // 마지막 업데이트 날짜: 마운트 시 즉시 조회 + 30초마다 폴링 (backendConnected 무관)
   useEffect(() => {
@@ -1469,8 +1429,8 @@ export default function Home() {
           </section>
         )}
 
-        {/* 모델 상태 + 모델 서버 연동 */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 max-w-4xl">
+        {/* 모델 상태 */}
+        <section className="mb-6 max-w-4xl">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h3 className="text-sm font-medium text-[#6e6e73] mb-4">모델 상태</h3>
             <div className="flex flex-col gap-2">
@@ -1514,67 +1474,6 @@ export default function Home() {
                 </div>
               )}
             </div>
-          </div>
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h3 className="text-sm font-medium text-[#6e6e73] mb-4">모델 서버 연동</h3>
-            {backendConnected !== true ? (
-              <div className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${backendConnected === false ? 'bg-[#ff3b30]' : 'bg-[#ff9f0a]'}`} />
-                <p className="text-sm text-[#6e6e73]">
-                  {backendConnected === null ? '백엔드 확인 중...' : '백엔드 연결 후 표시'}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                {[
-                  { key: 'load_sales_data' as const, label: 'load_sales_data.py' },
-                  { key: 'prediction_model' as const, label: 'prediction model' },
-                  { key: 'sales_analysis' as const, label: 'Sales analysis' },
-                  { key: 'inventory_optimization' as const, label: 'Inventory Optimization' },
-                  { key: 'realtime_dashboard' as const, label: 'Real-time dashboard' },
-                ].map(({ key, label }) => {
-                  const ok = integrationStatus?.modules_loaded?.[key] ?? false;
-                  return (
-                    <div key={key} className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${ok ? 'bg-[#34c759]' : 'bg-[#ff3b30]'}`} />
-                      <span className="text-sm text-[#1d1d1f] flex-1">{label}</span>
-                      <span className="text-xs text-[#6e6e73]">{ok ? '연동됨' : '미연동'}</span>
-                    </div>
-                  );
-                })}
-                {(integrationStatus === null || (integrationStatus?.modules_loaded && Object.values(integrationStatus.modules_loaded).some((v) => v === false))) && (
-                  <button
-                    type="button"
-                    onClick={() => fetchIntegrationStatus(0, true)}
-                    className="text-xs px-2 py-1.5 mt-1 rounded bg-[#f5f5f7] hover:bg-gray-200 text-[#1d1d1f]"
-                  >
-                    다시 확인
-                  </button>
-                )}
-                {integrationStatus?.data_source?.source && integrationStatus.data_source.source !== 'none' && (
-                  <p className="text-xs text-[#6e6e73] pt-1 border-t border-gray-100">
-                    데이터: {integrationStatus.data_source.source}
-                    {integrationStatus.data_source.sql_file_count != null && integrationStatus.data_source.sql_file_count > 0
-                      ? ` (SQL ${integrationStatus.data_source.sql_file_count}개)`
-                      : ''}
-                  </p>
-                )}
-                {/* Vercel 환경 변수 확인: NEXT_PUBLIC_API_URL 설정 시 표시 */}
-                <p className="text-xs text-[#6e6e73] pt-1 border-t border-gray-100">
-                  API 베이스:{' '}
-                  {typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL
-                    ? (() => {
-                        try {
-                          const h = new URL(process.env.NEXT_PUBLIC_API_URL).hostname;
-                          return h ? ` 설정됨 (${h})` : ' 설정됨';
-                        } catch {
-                          return ' 설정됨';
-                        }
-                      })()
-                    : ' 미설정 (로컬/상대경로)'}
-                </p>
-              </div>
-            )}
           </div>
         </section>
 
