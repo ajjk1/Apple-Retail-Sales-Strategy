@@ -1517,55 +1517,52 @@ export default function Home() {
                 <p className="text-[#6e6e73] text-center py-12">로딩 중...</p>
               ) : (
                 <>
-                  {/* 구역 1. 상단: KPI 헤더 레이아웃 (이미지와 동일 순서) */}
+                  {/* 구역 1. 상단: 재고 리스크 현황 (KPI 카드) - 이미지와 동일 순서이지만 기존 카드 디자인 유지 */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {/* 총 잠긴 돈 */}
-                    <div className="rounded-lg border border-gray-900 bg-black px-4 py-3 text-center shadow-sm">
-                      <p className="text-xs font-semibold tracking-wide text-white mb-1">
-                        총 잠긴 돈
-                      </p>
-                      <p className="text-2xl font-bold text-white underline decoration-red-400 decoration-2 underline-offset-4">
+                    {/* 1) 총 잠긴 돈 */}
+                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
+                      <p className="text-xs font-medium text-red-700 mb-1">💰 총 잠긴 돈 (Total Frozen Money)</p>
+                      <p className="text-2xl font-bold text-red-800">
                         {safetyStockKpiData?.total_frozen_money != null
                           ? `₩${Number(safetyStockKpiData.total_frozen_money).toLocaleString()}`
                           : '—'}
                       </p>
                     </div>
-                    {/* 예상 매출 */}
-                    <div className="rounded-lg border border-gray-900 bg-black px-4 py-3 text-center shadow-sm">
-                      <p className="text-xs font-semibold tracking-wide text-white mb-1">
-                        예상 매출
-                      </p>
-                      <p className="text-2xl font-bold text-white underline decoration-red-400 decoration-2 underline-offset-4">
+                    {/* 2) 예상 매출 */}
+                    <div className="rounded-xl p-4 border-2 border-green-200 bg-green-50">
+                      <p className="text-xs font-medium text-green-700 mb-1">💰 예상 매출 (Expected Revenue)</p>
+                      <p className="text-2xl font-bold text-green-800">
                         {safetyStockKpiData?.expected_revenue != null && safetyStockKpiData.expected_revenue > 0
                           ? `₩${Number(safetyStockKpiData.expected_revenue).toLocaleString()}`
                           : '—'}
                       </p>
-                      <p className="mt-1 text-[10px] text-gray-200">
-                        {safetyStockKpiData?.predicted_demand != null && safetyStockKpiData.predicted_demand > 0
-                          ? `예측 수요 ${safetyStockKpiData.predicted_demand.toLocaleString()}대 × 단가`
-                          : 'ARIMA 예측 수요 기준 산정'}
+                      <div className="mt-1 space-y-0.5">
+                        {safetyStockKpiData?.predicted_demand != null && safetyStockKpiData.predicted_demand > 0 ? (
+                          <>
+                            <p className="text-xs text-green-600">
+                              예측 수요: <strong>{safetyStockKpiData.predicted_demand.toLocaleString()}대</strong> (ARIMA)
+                            </p>
+                            <p className="text-[10px] text-green-500 italic">
+                              계산식: (ARIMA 예측 수량) × 제품 단가
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-green-600">(ARIMA 예측 필요)</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* 3) 과잉 품목 수 */}
+                    <div className="rounded-xl p-4 border-2 border-amber-200 bg-amber-50">
+                      <p className="text-xs font-medium text-amber-800 mb-1">🟡 과잉 품목 수</p>
+                      <p className="text-2xl font-bold text-amber-900">
+                        {safetyStockKpiData?.overstock_count != null ? safetyStockKpiData.overstock_count.toLocaleString() : '—'}
                       </p>
                     </div>
-                    {/* 과잉 품목 수 */}
-                    <div className="rounded-lg border border-gray-900 bg-black px-4 py-3 text-center shadow-sm">
-                      <p className="text-xs font-semibold tracking-wide text-white mb-1">
-                        과잉 품목 수
-                      </p>
-                      <p className="text-2xl font-bold text-white underline decoration-red-400 decoration-2 underline-offset-4">
-                        {safetyStockKpiData?.overstock_count != null
-                          ? safetyStockKpiData.overstock_count.toLocaleString()
-                          : '—'}
-                      </p>
-                    </div>
-                    {/* 위험 품목 수 */}
-                    <div className="rounded-lg border border-gray-900 bg-black px-4 py-3 text-center shadow-sm">
-                      <p className="text-xs font-semibold tracking-wide text-white mb-1">
-                        위험 품목 수
-                      </p>
-                      <p className="text-2xl font-bold text-white underline decoration-red-400 decoration-2 underline-offset-4">
-                        {safetyStockKpiData?.danger_count != null
-                          ? safetyStockKpiData.danger_count.toLocaleString()
-                          : '—'}
+                    {/* 4) 위험 품목 수 */}
+                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
+                      <p className="text-xs font-medium text-red-700 mb-1">🚨 위험 품목 수</p>
+                      <p className="text-2xl font-bold text-red-800">
+                        {safetyStockKpiData?.danger_count != null ? safetyStockKpiData.danger_count.toLocaleString() : '—'}
                       </p>
                     </div>
                   </div>
