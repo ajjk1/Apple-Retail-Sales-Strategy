@@ -263,6 +263,15 @@ def _extract_store_name_for_match(store_name: str) -> list:
         if not s.lower().startswith("store "):
             if "Store " + s not in candidates:
                 candidates.append("Store " + s)
+    # Centre/Center 철자 변형 (e.g. Rideau Centre ↔ Rideau Center)
+    if "Centre" in s:
+        alt = s.replace("Centre", "Center")
+        if alt not in candidates:
+            candidates.append(alt)
+    if "Center" in s:
+        alt = s.replace("Center", "Centre")
+        if alt not in candidates:
+            candidates.append(alt)
     return candidates
 
 
@@ -276,7 +285,8 @@ def get_sales_by_store_quarterly(store_name: str, country: str = None):
     df = _get_df()
     if df is None or df.empty:
         return []
-    if "sale_date" not in df.columns or "total_sales" not in df.columns:
+    date_col = "sale_date" if "sale_date" in df.columns else ("Sale_Date" if "Sale_Date" in df.columns else None)
+    if not date_col or "total_sales" not in df.columns:
         return []
     store_name = (store_name or "").strip()
     if not store_name:
@@ -285,13 +295,14 @@ def get_sales_by_store_quarterly(store_name: str, country: str = None):
     if not candidates:
         return []
     df["total_sales"] = pd.to_numeric(df["total_sales"], errors="coerce").fillna(0)
-    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
-    df = df.dropna(subset=["sale_date"])
-    df["year"] = df["sale_date"].dt.year
-    df["quarter"] = df["sale_date"].dt.quarter
+    df["_sale_date"] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=["_sale_date"])
+    df["year"] = df["_sale_date"].dt.year
+    df["quarter"] = df["_sale_date"].dt.quarter
     df = df[df["year"].between(2020, 2024)]
     if country and "Country" in df.columns:
-        df = df[df["Country"].astype(str).str.strip() == str(country).strip()]
+        country_str = str(country).strip().lower()
+        df = df[df["Country"].astype(str).str.strip().str.lower() == country_str]
     name_col = "Store_Name" if "Store_Name" in df.columns else ("store_name" if "store_name" in df.columns else None)
     if not name_col:
         return []
@@ -315,6 +326,11 @@ def get_sales_by_store_quarterly(store_name: str, country: str = None):
                 return True
             # 대소문자 무시 (소호(SoHo) ↔ Apple SoHo 등)
             if r_norm.lower() == c_norm.lower() or stripped_norm.lower() == c_norm.lower() or stripped_store_norm.lower() == c_norm.lower():
+                return True
+            # 후보가 DB 스토어명에 포함된 경우 (e.g. Union Square ↔ Apple Store Union Square)
+            if c and (c in r or c in stripped or c in stripped_store):
+                return True
+            if c_norm and (c_norm in r_norm or c_norm in stripped_norm or c_norm in stripped_store_norm):
                 return True
         return False
 
@@ -345,7 +361,8 @@ def get_sales_by_store_quarterly_by_category(store_name: str, country: str = Non
     df = _get_df()
     if df is None or df.empty:
         return []
-    if "sale_date" not in df.columns or "total_sales" not in df.columns:
+    date_col = "sale_date" if "sale_date" in df.columns else ("Sale_Date" if "Sale_Date" in df.columns else None)
+    if not date_col or "total_sales" not in df.columns:
         return []
     # 데이터 컬럼: category_name, category_id (SQL/load_sales_data 기준)
     cat_col = "category_name" if "category_name" in df.columns else ("category_id" if "category_id" in df.columns else ("Category" if "Category" in df.columns else ("category" if "category" in df.columns else None)))
@@ -356,13 +373,14 @@ def get_sales_by_store_quarterly_by_category(store_name: str, country: str = Non
     if not candidates:
         return []
     df["total_sales"] = pd.to_numeric(df["total_sales"], errors="coerce").fillna(0)
-    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce")
-    df = df.dropna(subset=["sale_date"])
-    df["year"] = df["sale_date"].dt.year
-    df["quarter"] = df["sale_date"].dt.quarter
+    df["_sale_date"] = pd.to_datetime(df[date_col], errors="coerce")
+    df = df.dropna(subset=["_sale_date"])
+    df["year"] = df["_sale_date"].dt.year
+    df["quarter"] = df["_sale_date"].dt.quarter
     df = df[df["year"].between(2020, 2024)]
     if country and "Country" in df.columns:
-        df = df[df["Country"].astype(str).str.strip() == str(country).strip()]
+        country_str = str(country).strip().lower()
+        df = df[df["Country"].astype(str).str.strip().str.lower() == country_str]
     name_col = "Store_Name" if "Store_Name" in df.columns else ("store_name" if "store_name" in df.columns else None)
     if not name_col:
         return []
@@ -383,6 +401,10 @@ def get_sales_by_store_quarterly_by_category(store_name: str, country: str = Non
             if r_norm == c_norm or stripped_norm == c_norm or stripped_store_norm == c_norm:
                 return True
             if r_norm.lower() == c_norm.lower() or stripped_norm.lower() == c_norm.lower() or stripped_store_norm.lower() == c_norm.lower():
+                return True
+            if c and (c in r or c in stripped or c in stripped_store):
+                return True
+            if c_norm and (c_norm in r_norm or c_norm in stripped_norm or c_norm in stripped_store_norm):
                 return True
         return False
 
