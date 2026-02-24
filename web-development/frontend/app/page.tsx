@@ -220,6 +220,37 @@ function PieTooltipContentQuantity({ active, payload }: { active?: boolean; payl
   );
 }
 
+/** 연도별 판매 수량 차트용 Tooltip (Bar+Line 하나로 통합 표시) */
+function YearlySalesTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { payload?: { quantity?: number; isPredicted?: boolean } }[];
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0 || label == null) return null;
+  const row = payload[0]?.payload ?? {};
+  const qty = Number(row.quantity ?? 0) || 0;
+  const isPred = !!row.isPredicted;
+
+  return (
+    <div
+      className="rounded-lg p-2 px-3 shadow-lg border border-gray-200"
+      style={{ backgroundColor: 'rgba(255,255,255,0.98)' }}
+    >
+      <div className="text-sm font-semibold text-[#1d1d1f] mb-1">
+        {label}년 {isPred ? '(예측)' : ''}
+      </div>
+      <div className="flex justify-between gap-4 text-sm">
+        <span className="text-gray-600">연도별 판매 {QUANTITY_LABEL}</span>
+        <span className="text-[#1d1d1f] font-bold">{qty.toLocaleString()}{QUANTITY_UNIT}</span>
+      </div>
+    </div>
+  );
+}
+
 /** 매장별 재고 현황: 마우스 오버 툴팁 (위험/과잉 설명 포함) */
 function StoreInventoryTooltip({
   active,
@@ -1918,13 +1949,7 @@ export default function Home() {
                               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                               <XAxis dataKey="year" tick={{ fontSize: 11 }} stroke="#6e6e73" />
                               <YAxis tick={{ fontSize: 11 }} stroke="#6e6e73" tickFormatter={(v) => v.toLocaleString()} />
-                              <Tooltip
-                                formatter={(value: number, _name: string, props: { payload?: { isPredicted?: boolean } }) => [
-                                  `${Number(value).toLocaleString()}${QUANTITY_UNIT}`,
-                                  props?.payload?.isPredicted ? '2025년(예측)' : '실적',
-                                ]}
-                                labelFormatter={(label) => `${label}년`}
-                              />
+                              <Tooltip content={<YearlySalesTooltip />} />
                               <Bar dataKey="quantity" radius={[4, 4, 0, 0]} name={QUANTITY_LABEL}>
                                 {[
                                   ...forecastData.yearly_quantity.map((r) => ({ year: r.year, quantity: r.quantity, isPredicted: false })),
@@ -1936,10 +1961,20 @@ export default function Home() {
                               <Line
                                 type="monotone"
                                 dataKey="quantity"
-                                stroke="#0f172a"
+                                stroke="#111827"
                                 strokeWidth={2}
-                                dot={{ r: 4, fill: '#0f172a' }}
-                                activeDot={{ r: 6, fill: '#0f172a', stroke: '#fff', strokeWidth: 2 }}
+                                dot={(props) => {
+                                  const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                  if (cx == null || cy == null) return null;
+                                  const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                  return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
+                                }}
+                                activeDot={(props) => {
+                                  const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                  if (cx == null || cy == null) return null;
+                                  const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                  return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
+                                }}
                                 connectNulls
                                 name={QUANTITY_LABEL}
                               />
