@@ -873,7 +873,11 @@ export default function SalesPage() {
                             outerRadius={80}
                             label={(props) => {
                               const p = (props as { payload?: { grade?: string; pct?: number } }).payload;
-                              return p ? `등급 ${p.grade ?? ''}: ${p.pct ?? 0}%` : '';
+                              if (!p) return '';
+                              const pct = Number(p.pct ?? 0);
+                              // 0% 또는 매우 작은 비중은 라벨을 숨겨 겹침 방지
+                              if (!Number.isFinite(pct) || pct <= 0.01) return '';
+                              return `등급 ${p.grade ?? ''}: ${pct}%`;
                             }}
                           >
                             {storePerformanceGrade.grade_distribution.map((entry, i) => (
