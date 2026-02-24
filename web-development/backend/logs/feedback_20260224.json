@@ -1,0 +1,17 @@
+[
+  {
+    "ts": "2026-02-24T07:03:49.967022Z",
+    "store_id": "ST-1",
+    "user_id": 1,
+    "feedback": {
+      "Apple Watch Ultra": 1,
+      "iMac 24-inch": 1,
+      "MacBook Pro 16-inch": 1
+    },
+    "clicked_items": [
+      "Apple Watch Ultra",
+      "iMac 24-inch",
+      "MacBook Pro 16-inch"
+    ]
+  }
+]
