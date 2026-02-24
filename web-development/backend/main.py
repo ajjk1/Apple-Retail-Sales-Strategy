@@ -40,8 +40,13 @@ import io
 import re
 from typing import Any, Dict, List, Optional
 
+from strategic_association_orchestrator import router as strategic_association_router
+
 # FastAPI 애플리케이션 객체 생성 (제목: Apple Retail API)
 app = FastAPI(title="Apple Retail API")
+
+# 전략적 연관분석 오케스트레이터 라우터 포함
+app.include_router(strategic_association_router)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _MODEL_SERVER = _PROJECT_ROOT / "model-server"

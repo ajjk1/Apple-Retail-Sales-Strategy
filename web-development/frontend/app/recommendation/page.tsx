@@ -503,79 +503,6 @@ export default function RecommendationPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* 매출 예측 시계열 차트 (최상단) */}
-        {salesForecast && salesChartData.length > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
-            <h2 className="text-base font-semibold text-[#1d1d1f] mb-2">📈 향후 30일 매출 예측</h2>
-            <p className="text-xs text-[#86868b] mb-4">
-              스캐터·라인 (결측·이상치 제거) · 실측(검은색) · 예측(파란색 점선) · 신뢰 구간(흐린 파란색)
-            </p>
-            <div className="h-[320px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={salesChartData} margin={{ top: 8, right: 12, left: 8, bottom: 24 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10 }}
-                    stroke="#6e6e73"
-                    tickFormatter={(v) => (v && String(v).slice(0, 7)) || v}
-                  />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" tickFormatter={(v) => (Number(v) / 1000).toFixed(0) + 'k'} />
-                  <Tooltip
-                    formatter={(value: number) => [value != null ? value.toLocaleString() : '', '']}
-                    labelFormatter={(label) => label}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  {/* 신뢰 구간: 흐린 파란색 영역 */}
-                  <Area
-                    type="monotone"
-                    dataKey="upper"
-                    fill="#3b82f6"
-                    fillOpacity={0.2}
-                    stroke="none"
-                    legendType="none"
-                    isAnimationActive={false}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="lower"
-                    fill="#fff"
-                    fillOpacity={1}
-                    stroke="none"
-                    legendType="none"
-                    isAnimationActive={false}
-                  />
-                  {/* 실측: 스캐터 + 라인 (검은색) */}
-                  <Line
-                    type="monotone"
-                    dataKey="actual"
-                    stroke="#1d1d1f"
-                    strokeWidth={1.5}
-                    dot={{ r: 5, fill: '#1d1d1f', strokeWidth: 0 }}
-                    activeDot={{ r: 6, fill: '#1d1d1f' }}
-                    connectNulls
-                    name="실측 매출 (Actual Sales)"
-                    isAnimationActive={false}
-                  />
-                  {/* 예측: 스캐터 + 라인 (파란색 점선) */}
-                  <Line
-                    type="monotone"
-                    dataKey="predicted"
-                    stroke="#3b82f6"
-                    strokeWidth={1.5}
-                    strokeDasharray="6 4"
-                    dot={{ r: 5, fill: '#3b82f6', strokeWidth: 0 }}
-                    activeDot={{ r: 6, fill: '#3b82f6' }}
-                    connectNulls
-                    name="예측 매출 (Predicted Sales)"
-                    isAnimationActive={false}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        )}
-
         {/* 필터 + 상점 선택 (대륙/국가/상점) */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
           <div className="flex flex-col gap-3 flex-1 min-w-0">
@@ -1487,6 +1414,79 @@ export default function RecommendationPage() {
                 </div>
               </div>
             </div>
+
+            {/* 매출 예측 시계열 차트: 향후 30일 (분석 카드 이후 위치) */}
+            {salesForecast && salesChartData.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
+                <h2 className="text-base font-semibold text-[#1d1d1f] mb-2">📈 향후 30일 매출 예측</h2>
+                <p className="text-xs text-[#86868b] mb-4">
+                  스캐터·라인 (결측·이상치 제거) · 실측(검은색) · 예측(파란색 점선) · 신뢰 구간(흐린 파란색)
+                </p>
+                <div className="h-[320px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={salesChartData} margin={{ top: 8, right: 12, left: 8, bottom: 24 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10 }}
+                        stroke="#6e6e73"
+                        tickFormatter={(v) => (v && String(v).slice(0, 7)) || v}
+                      />
+                      <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" tickFormatter={(v) => (Number(v) / 1000).toFixed(0) + 'k'} />
+                      <Tooltip
+                        formatter={(value: number) => [value != null ? value.toLocaleString() : '', '']}
+                        labelFormatter={(label) => label}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      {/* 신뢰 구간: 흐린 파란색 영역 */}
+                      <Area
+                        type="monotone"
+                        dataKey="upper"
+                        fill="#3b82f6"
+                        fillOpacity={0.2}
+                        stroke="none"
+                        legendType="none"
+                        isAnimationActive={false}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="lower"
+                        fill="#fff"
+                        fillOpacity={1}
+                        stroke="none"
+                        legendType="none"
+                        isAnimationActive={false}
+                      />
+                      {/* 실측: 스캐터 + 라인 (검은색) */}
+                      <Line
+                        type="monotone"
+                        dataKey="actual"
+                        stroke="#1d1d1f"
+                        strokeWidth={1.5}
+                        dot={{ r: 5, fill: '#1d1d1f', strokeWidth: 0 }}
+                        activeDot={{ r: 6, fill: '#1d1d1f' }}
+                        connectNulls
+                        name="실측 매출 (Actual Sales)"
+                        isAnimationActive={false}
+                      />
+                      {/* 예측: 스캐터 + 라인 (파란색 점선) */}
+                      <Line
+                        type="monotone"
+                        dataKey="predicted"
+                        stroke="#3b82f6"
+                        strokeWidth={1.5}
+                        strokeDasharray="6 4"
+                        dot={{ r: 5, fill: '#3b82f6', strokeWidth: 0 }}
+                        activeDot={{ r: 6, fill: '#3b82f6' }}
+                        connectNulls
+                        name="예측 매출 (Predicted Sales)"
+                        isAnimationActive={false}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
 
             {/* 하단 가이드 */}
             <div className="mt-8 p-4 rounded-xl bg-[#f0f9ff] border border-[#bae6fd] text-sm text-[#0c4a6e]">
