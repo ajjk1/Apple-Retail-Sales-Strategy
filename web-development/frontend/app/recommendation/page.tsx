@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { apiGet, apiPost } from '../../lib/api';
+import { getContinentForCountry, formatCountryDisplay, stripApplePrefix, formatStoreDisplay } from '../../lib/country';
 import {
   ComposedChart,
   Area,
@@ -52,6 +53,7 @@ interface StoreRecommendationsData {
 interface Store {
   store_id: string;
   store_name: string;
+  country?: string;
 }
 
 interface SalesForecastData {
@@ -160,6 +162,8 @@ export default function RecommendationPage() {
   const [storeLoading, setStoreLoading] = useState(false);
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const [stores, setStores] = useState<Store[]>([]);
+  const [selectedContinent, setSelectedContinent] = useState<string>('');
+  const [selectedCountry, setSelectedCountry] = useState<string>('');
   const [recommendations, setRecommendations] = useState<StoreRecommendationsData | null>(null);
   const [salesForecast, setSalesForecast] = useState<SalesForecastData | null>(null);
   const [overstockList, setOverstockList] = useState<OverstockItem[]>([]);
@@ -192,6 +196,62 @@ export default function RecommendationPage() {
     const names = fromTop3.length ? fromTop3 : fromCollab;
     return names.filter(Boolean);
   }, [userPersonalizedRec?.top_3, collabFilterRec?.top_recommendations]);
+
+  // 스토어 목록에 대륙·국가 정보 매핑
+  const storesWithRegion = useMemo(
+    () =>
+      stores.map((s) => {
+        const countryEn = s.country || '';
+        const continentKo = countryEn ? getContinentForCountry(countryEn) : '기타';
+        return { ...s, country: countryEn, continent: continentKo };
+      }),
+    [stores]
+  );
+
+  const continentOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          storesWithRegion
+            .map((s) => s.continent as string | undefined)
+            .filter((v): v is string => !!v && v !== '기타')
+        )
+      ),
+    [storesWithRegion]
+  );
+
+  const countryOptions = useMemo(() => {
+    let candidate = storesWithRegion;
+    if (selectedContinent) {
+      candidate = candidate.filter((s) => s.continent === selectedContinent);
+    }
+    return Array.from(
+      new Set(
+        candidate
+          .map((s) => s.country as string | undefined)
+          .filter((v): v is string => !!v)
+      )
+    );
+  }, [storesWithRegion, selectedContinent]);
+
+  const filteredStores = useMemo(() => {
+    let list = storesWithRegion;
+    if (selectedContinent) {
+      list = list.filter((s) => s.continent === selectedContinent);
+    }
+    if (selectedCountry) {
+      list = list.filter((s) => s.country === selectedCountry);
+    }
+    return list;
+  }, [storesWithRegion, selectedContinent, selectedCountry]);
+
+  // 필터 변경 시 현재 선택된 상점이 목록에 없으면 첫 상점으로 자동 보정
+  useEffect(() => {
+    if (!filteredStores.length) return;
+    if (!filteredStores.find((s) => s.store_id === selectedStoreId)) {
+      setSelectedStoreId(filteredStores[0].store_id);
+    }
+  }, [filteredStores, selectedStoreId]);
 
   useEffect(() => {
     if (feedbackProductList.length) {
@@ -232,7 +292,16 @@ export default function RecommendationPage() {
         clearTimeout(timeoutId);
         if (json?.stores && json.stores.length > 0) {
           setStores(json.stores);
-          setSelectedStoreId(json.stores[0].store_id);
+          // 첫 상점을 기준으로 기본 대륙·국가 선택
+          const first = json.stores[0];
+          if (first?.country) {
+            setSelectedCountry(first.country);
+            setSelectedContinent(getContinentForCountry(first.country));
+          } else {
+            setSelectedCountry('');
+            setSelectedContinent('');
+          }
+          setSelectedStoreId(first.store_id);
           setStoreListError(null);
         } else {
           setStores([]);
@@ -367,22 +436,29 @@ export default function RecommendationPage() {
       .finally(() => setStoreLoading(false));
   }, [selectedStoreId]);
 
-  // 매출 시계열 차트용 통합 데이터 (실측 + 예측, 신뢰구간)
+  // 매출 시계열 차트용 통합 데이터 (실측 + 예측, 신뢰구간) — 결측치 제거 후 스캐터·라인용
   const salesChartData = useMemo(() => {
     if (!salesForecast) return [];
     const map = new Map<string, { date: string; actual?: number; predicted?: number; lower?: number; upper?: number }>();
-    salesForecast.actual.forEach((a) => map.set(a.date, { ...map.get(a.date), date: a.date, actual: a.value }));
-    salesForecast.predicted.forEach((p) =>
-      map.set(p.date, {
-        ...map.get(p.date),
-        date: p.date,
-        predicted: p.value,
-        lower: p.lower,
-        upper: p.upper,
-      })
-    );
+    salesForecast.actual.forEach((a) => {
+      const v = a?.value;
+      if (v != null && !Number.isNaN(Number(v))) map.set(a.date, { ...map.get(a.date), date: a.date, actual: Number(v) });
+    });
+    salesForecast.predicted.forEach((p) => {
+      const v = p?.value;
+      if (v != null && !Number.isNaN(Number(v))) {
+        map.set(p.date, {
+          ...map.get(p.date),
+          date: p.date,
+          predicted: Number(v),
+          lower: p.lower != null ? Number(p.lower) : undefined,
+          upper: p.upper != null ? Number(p.upper) : undefined,
+        });
+      }
+    });
     return Array.from(map.entries())
       .map(([, v]) => v)
+      .filter((row) => row.actual != null || row.predicted != null)
       .sort((a, b) => (a.date < b.date ? -1 : 1));
   }, [salesForecast]);
 
@@ -432,7 +508,7 @@ export default function RecommendationPage() {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
             <h2 className="text-base font-semibold text-[#1d1d1f] mb-2">📈 향후 30일 매출 예측</h2>
             <p className="text-xs text-[#86868b] mb-4">
-              과거 매출(검은색 실선) · 예측 매출(파란색 점선) · 신뢰 구간(흐린 파란색)
+              스캐터·라인 (결측·이상치 제거) · 실측(검은색) · 예측(파란색 점선) · 신뢰 구간(흐린 파란색)
             </p>
             <div className="h-[320px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -469,25 +545,27 @@ export default function RecommendationPage() {
                     legendType="none"
                     isAnimationActive={false}
                   />
-                  {/* 실측: 검은색 실선 */}
+                  {/* 실측: 스캐터 + 라인 (검은색) */}
                   <Line
                     type="monotone"
                     dataKey="actual"
                     stroke="#1d1d1f"
-                    strokeWidth={2}
-                    dot={{ r: 2 }}
+                    strokeWidth={1.5}
+                    dot={{ r: 5, fill: '#1d1d1f', strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#1d1d1f' }}
                     connectNulls
                     name="실측 매출 (Actual Sales)"
                     isAnimationActive={false}
                   />
-                  {/* 예측: 파란색 점선 */}
+                  {/* 예측: 스캐터 + 라인 (파란색 점선) */}
                   <Line
                     type="monotone"
                     dataKey="predicted"
                     stroke="#3b82f6"
-                    strokeWidth={2}
+                    strokeWidth={1.5}
                     strokeDasharray="6 4"
-                    dot={{ r: 2 }}
+                    dot={{ r: 5, fill: '#3b82f6', strokeWidth: 0 }}
+                    activeDot={{ r: 6, fill: '#3b82f6' }}
                     connectNulls
                     name="예측 매출 (Predicted Sales)"
                     isAnimationActive={false}
@@ -498,30 +576,83 @@ export default function RecommendationPage() {
           </div>
         )}
 
-        {/* 사이드바 역할: 분석할 상점 선택 */}
+        {/* 필터 + 상점 선택 (대륙/국가/상점) */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-0">
-            <label className="block text-sm font-medium text-[#1d1d1f] mb-2">분석할 상점을 선택하세요</label>
-            <select
-              value={selectedStoreId}
-              onChange={(e) => setSelectedStoreId(e.target.value)}
-              className="w-full max-w-md text-sm border border-gray-200 rounded-lg px-4 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-              disabled={stores.length === 0}
-            >
-              {stores.length === 0 ? (
-                <option value="">상점 목록 로딩 중...</option>
-              ) : (
-                stores.map((s) => (
-                  <option key={s.store_id} value={s.store_id}>
-                    {s.store_name || s.store_id} ({s.store_id})
-                  </option>
-                ))
-              )}
-            </select>
+          <div className="flex flex-col gap-3 flex-1 min-w-0">
+            <div className="flex flex-wrap gap-3">
+              <div className="min-w-[140px]">
+                <label className="block text-xs font-medium text-[#1d1d1f] mb-1">대륙 필터</label>
+                <select
+                  value={selectedContinent}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedContinent(next);
+                    setSelectedCountry('');
+                  }}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                  disabled={stores.length === 0}
+                >
+                  <option value="">전체</option>
+                  {continentOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[180px]">
+                <label className="block text-xs font-medium text-[#1d1d1f] mb-1">국가 필터</label>
+                <select
+                  value={selectedCountry}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSelectedCountry(next);
+                  }}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                  disabled={stores.length === 0}
+                >
+                  <option value="">전체</option>
+                  {countryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {formatCountryDisplay(c)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex-1 min-w-[220px]">
+                <label className="block text-sm font-medium text-[#1d1d1f] mb-1">분석할 상점을 선택하세요</label>
+                <select
+                  value={selectedStoreId}
+                  onChange={(e) => setSelectedStoreId(e.target.value)}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-4 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                  disabled={filteredStores.length === 0}
+                >
+                  {stores.length === 0 ? (
+                    <option value="">상점 목록 로딩 중...</option>
+                  ) : filteredStores.length === 0 ? (
+                    <option value="">필터 조건에 맞는 상점이 없습니다.</option>
+                  ) : (
+                    filteredStores.map((s) => {
+                      const rawName = s.store_name || s.store_id;
+                      const cleanedName = formatStoreDisplay(stripApplePrefix(rawName));
+                      return (
+                        <option key={s.store_id} value={s.store_id}>
+                          {cleanedName}
+                          {s.country ? ` · ${formatCountryDisplay(s.country)}` : ''}
+                        </option>
+                      );
+                    })
+                  )}
+                </select>
+              </div>
+            </div>
           </div>
           {recommendations && (
             <p className="text-sm text-[#6e6e73] bg-[#f5f5f7] px-4 py-2 rounded-lg">
-              현재 선택된 상점: <strong className="text-[#1d1d1f]">{recommendations.store_summary?.store_name ?? selectedStoreId}</strong> ({selectedStoreId})
+              현재 선택된 상점:{' '}
+              <strong className="text-[#1d1d1f]">
+                {formatStoreDisplay(stripApplePrefix(recommendations.store_summary?.store_name ?? selectedStoreId))}
+              </strong>
             </p>
           )}
         </div>

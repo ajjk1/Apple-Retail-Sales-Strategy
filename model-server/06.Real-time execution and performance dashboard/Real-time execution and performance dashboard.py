@@ -117,7 +117,8 @@ def get_recommendation_summary():
 def get_store_list() -> Dict[str, List[Dict[str, str]]]:
     """
     성장 전략 대시보드용 상점 목록 반환. 추천·매출 예측과 동일한 load_sales_dataframe() 사용.
-    반환: {"stores": [{"store_id": str, "store_name": str}, ...]} (store_id 기준 정렬)
+    반환: {"stores": [{"store_id": str, "store_name": str, "country": str}, ...]} (store_id 기준 정렬)
+    - country는 매장에 해당하는 Country 컬럼(있을 경우)의 대표값.
     """
     df = load_sales_dataframe()
     if df is None or df.empty:
@@ -128,24 +129,40 @@ def get_store_list() -> Dict[str, List[Dict[str, str]]]:
         print(f"[Real-time] get_store_list: store_id 컬럼 없음. 컬럼: {list(df.columns)[:10]}")
         return {"stores": []}
     name_col = "Store_Name" if "Store_Name" in df.columns else ("store_name" if "store_name" in df.columns else None)
+    country_col = "Country" if "Country" in df.columns else ("country" if "country" in df.columns else None)
     stores = df[store_id_col].astype(str).str.strip().unique().tolist()
     store_names: Dict[str, str] = {}
-    if name_col:
-        for sid in stores:
-            sub = df[df[store_id_col].astype(str).str.strip() == sid]
-            if not sub.empty:
-                val = sub[name_col].iloc[0]
-                store_names[sid] = str(val).strip() if pd.notna(val) else sid
-            else:
-                store_names[sid] = sid
-    else:
-        store_names = {s: s for s in stores}
+    store_countries: Dict[str, str] = {}
+    for sid in stores:
+        sub = df[df[store_id_col].astype(str).str.strip() == sid]
+        # 상점 이름
+        if name_col and not sub.empty:
+            val = sub[name_col].iloc[0]
+            store_names[sid] = str(val).strip() if pd.notna(val) else sid
+        else:
+            store_names[sid] = sid
+        # 국가 (있을 경우 첫번째 유효 값 사용)
+        country_val = ""
+        if country_col and not sub.empty and country_col in sub.columns:
+            non_null = sub[country_col].dropna()
+            if not non_null.empty:
+                country_val = str(non_null.iloc[0]).strip()
+        store_countries[sid] = country_val
     sorted_stores = sorted(stores, key=lambda x: (x.upper(), x))
     result = {
-        "stores": [{"store_id": s, "store_name": store_names.get(s, s)} for s in sorted_stores]
+        "stores": [
+            {
+                "store_id": s,
+                "store_name": store_names.get(s, s),
+                "country": store_countries.get(s, ""),
+            }
+            for s in sorted_stores
+        ]
     }
     n = len(result["stores"])
-    print(f"[Real-time] get_store_list: 반환 상점 {n}건 (store_id 컬럼={store_id_col}, store_name 컬럼={name_col})")
+    print(
+        f"[Real-time] get_store_list: 반환 상점 {n}건 (store_id 컬럼={store_id_col}, store_name 컬럼={name_col}, country 컬럼={country_col})"
+    )
     if n > 0:
         print(f"[Real-time] get_store_list: 첫 상점 예시 - {result['stores'][0]}")
     return result
@@ -1028,6 +1045,7 @@ def predict_sales(store_id: str, forecast_days: int = 30) -> Dict[str, Any]:
     """
     향후 forecast_days(기본 30)일 매출 예측.
     - 일별 매출을 resample('D')로 생성 후 선형 회귀로 추세 추정 (Prophet 없이).
+    - 결측치 제거 후 IQR 기준 이상치 제거하여 실측/예측에 반영.
     - 반환: actual (실측), predicted (예측), lower/upper (신뢰 구간).
     """
     df = load_sales_dataframe()
@@ -1038,7 +1056,22 @@ def predict_sales(store_id: str, forecast_days: int = 30) -> Dict[str, Any]:
     if daily.empty or len(daily) < 2:
         return {"actual": [], "predicted": [], "store_id": store_id}
     
-    # 실측: 날짜와 매출 리스트
+    # 결측치 제거
+    daily = daily.dropna()
+    if len(daily) < 2:
+        return {"actual": [], "predicted": [], "store_id": store_id}
+    
+    # IQR 기준 이상치 제거 (Q1 - 1.5*IQR ~ Q3 + 1.5*IQR)
+    q1, q3 = daily.quantile(0.25), daily.quantile(0.75)
+    iqr = q3 - q1
+    if iqr > 0:
+        lb, ub = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        daily = daily[(daily >= lb) & (daily <= ub)]
+    if daily.empty or len(daily) < 2:
+        return {"actual": [], "predicted": [], "store_id": store_id}
+    
+    # 실측: 날짜와 매출 리스트 (정렬 유지)
+    daily = daily.sort_index()
     actual_list = [
         {"date": d.strftime("%Y-%m-%d"), "value": round(float(v), 2)}
         for d, v in daily.items()
