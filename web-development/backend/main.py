@@ -2458,18 +2458,11 @@ def _apple_data_fallback():
 
 @app.get("/api/last-updated")
 def api_last_updated():
-    """마지막 업데이트 날짜 (실시간 연동용, 경량 폴링)."""
-    global _cached_last_updated
-    if _cached_last_updated:
-        return {"last_updated": _cached_last_updated}
-    # 캐시 없으면 load_retail_data 한 번 호출하여 채움
-    try:
-        result = load_retail_data()
-        if result and result.get("last_updated"):
-            return {"last_updated": result["last_updated"]}
-    except Exception:
-        pass
-    return {"last_updated": _today_kst()}
+    """마지막 업데이트 날짜/시간 (KST 기준, 실시간)."""
+    # 데이터셋의 최종 sale_date 대신, 대시보드가 열려 있는 "현재 시각"을 그대로 반환.
+    # 프론트엔드는 이 값을 30초마다 폴링하여 거의 실시간으로 갱신한다.
+    now_kst = datetime.now(ZoneInfo("Asia/Seoul"))
+    return {"last_updated": now_kst.strftime("%Y-%m-%d %H:%M")}
 
 
 @app.get("/api/apple-data")  # 프론트엔드에서 호출할 주소를 정의합니다.
