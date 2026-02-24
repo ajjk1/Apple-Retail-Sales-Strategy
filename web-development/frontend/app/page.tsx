@@ -220,6 +220,66 @@ function PieTooltipContentQuantity({ active, payload }: { active?: boolean; payl
   );
 }
 
+/** 매장별 재고 현황: 마우스 오버 툴팁 (위험/과잉 설명 포함) */
+function StoreInventoryTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { payload?: { statusLabel?: string; inventory?: number; safety?: number; diff?: number; frozen?: number } }[];
+  label?: string;
+}) {
+  if (!active || !payload || payload.length === 0 || !label) return null;
+  const row = payload[0]?.payload ?? {};
+  const current = Number(row.inventory ?? 0) || 0;
+  const safety = Number(row.safety ?? 0) || 0;
+  const diff = Number(row.diff ?? current - safety) || 0;
+  const frozen = Number(row.frozen ?? 0) || 0;
+  const status = (row.statusLabel ?? '') as string;
+
+  const isOverstock = status === '과잉';
+  const isDanger = status === '위험';
+  const statusLabel = isOverstock ? '과잉 재고 (Overstock)' : isDanger ? '위험 품목 (Danger)' : status || '정상 재고';
+  const diffLabel = isDanger ? '추가 필요 수량' : '조정/처분 목표 수량';
+
+  return (
+    <div
+      className="rounded-lg p-3 shadow-lg border border-gray-200 max-w-xs"
+      style={{ backgroundColor: 'rgba(255,255,255,0.98)' }}
+    >
+      <div className="text-xs font-semibold text-[#6e6e73] mb-0.5">{statusLabel}</div>
+      <div className="text-sm font-bold text-[#1d1d1f] mb-2">{label}</div>
+      <div className="space-y-1.5 text-xs text-[#1d1d1f]">
+        <div>
+          <span className="font-medium">현재 총 재고:</span>{' '}
+          <span className="font-semibold">{current.toLocaleString()}개</span>{' '}
+          <span className="mx-1">·</span>
+          <span className="font-medium">목표 안전 재고:</span>{' '}
+          <span className="font-semibold">{safety.toLocaleString()}개</span>
+        </div>
+        <div>
+          <span className="font-medium">{diffLabel}:</span>{' '}
+          <span className="font-semibold">
+            {diff.toLocaleString()}개
+          </span>
+        </div>
+        <div>
+          <span className="font-medium">묶여있는 자금(Frozen Money):</span>{' '}
+          <span className="font-semibold">₩{frozen.toLocaleString()}</span>
+        </div>
+        <div className="pt-1 text-[11px] text-[#6e6e73] leading-snug">
+          {isOverstock
+            ? '과잉 재고를 프로모션/할인을 통해 소진하면, 위 금액만큼 현금이 회수됩니다.'
+            : isDanger
+            ? '위험 품목은 목표 안전 재고까지 도달하기 위해 추가 발주가 필요한 수량을 보여줍니다.'
+            : '현재 재고와 안전 재고의 차이를 기준으로 매장별 재고 상태를 한눈에 볼 수 있습니다.'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 연도 필터 적용: 전체 = 20~24년 합산 1개 파이차트, 특정 연도 = 해당 연도 1개 파이차트 (수량 표시) */
 function PieChartsByYearFilter({
   dataByYear,
@@ -1575,8 +1635,8 @@ export default function Home() {
                         <div className="flex-1 min-w-0">
                           <h3 className="text-sm font-semibold text-[#1d1d1f]">매장별 재고 현황</h3>
                           <p className="text-xs text-[#86868b] mt-0.5">
-                            매장명 · 잠긴 돈(₩) 기준 가로형 막대 | 재고 상태에 따라 색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) |
-                            <span className="ml-1 text-[10px]">데이터: SQL (Inventory Optimization 파이프라인) | 정렬: 잠긴 돈 내림차순</span>
+                            막대에 마우스를 올리면 매장별 현재 총 재고, 목표 안전 재고, 조정 필요 수량, Frozen Money를 한 번에 보여줍니다.
+                            <span className="ml-1 text-[10px]">색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) | 기준: 잠긴 돈(₩)</span>
                           </p>
                         </div>
                         <select
@@ -1599,17 +1659,28 @@ export default function Home() {
                             <ResponsiveContainer width="100%" height={Math.max(320, Math.min(400, safetyStockInventoryList.length * 28))}>
                               <BarChart
                                 layout="vertical"
-                                data={safetyStockInventoryList.map((row) => ({
-                                  name: (row.Store_Name ?? '').trim() || '—',
-                                  잠긴돈: Number(row.Frozen_Money) || 0,
-                                  상태: (row.Status ?? '').trim() || '정상',
-                                }))}
+                                data={safetyStockInventoryList.map((row) => {
+                                  const inventory = Number(row.Inventory) || 0;
+                                  const safety = Number(row.Safety_Stock) || 0;
+                                  const diff = inventory - safety;
+                                  const status = (row.Status ?? '').trim() || '정상';
+                                  return {
+                                    name: (row.Store_Name ?? '').trim() || '—',
+                                    잠긴돈: Number(row.Frozen_Money) || 0,
+                                    상태: status,
+                                    inventory,
+                                    safety,
+                                    diff,
+                                    frozen: Number(row.Frozen_Money) || 0,
+                                    statusLabel: status,
+                                  };
+                                })}
                                 margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
                               >
                                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                                 <XAxis type="number" tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`} />
                                 <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                                <Tooltip formatter={(value: number) => [`₩${(Number(value) || 0).toLocaleString()}`, '잠긴 돈']} labelFormatter={(label) => `매장: ${label ?? '—'}`} />
+                                <Tooltip content={<StoreInventoryTooltip />} />
                                 <Bar dataKey="잠긴돈" radius={[0, 4, 4, 0]} isAnimationActive={true}>
                                   {safetyStockInventoryList.map((row, i) => {
                                     const status = (row.Status ?? '').trim();
