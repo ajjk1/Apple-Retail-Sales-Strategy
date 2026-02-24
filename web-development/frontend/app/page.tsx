@@ -532,13 +532,16 @@ export default function Home() {
     () =>
       (safetyStockInventoryList ?? [])
         .map((row) => {
+          const rawName = (row.Store_Name ?? '').trim() || '—';
+          const displayName = stripApplePrefix(rawName);
           const inventory = Number(row.Inventory) || 0;
           const safety = Number(row.Safety_Stock) || 0;
           const overstockQty = inventory - safety;
           const status = (row.Status ?? '').trim();
           const frozen = Number(row.Frozen_Money) || 0;
           return {
-            name: (row.Store_Name ?? '').trim() || '—',
+            name: displayName,
+            store_name: rawName,
             overstock_qty: overstockQty > 0 ? overstockQty : 0,
             frozen,
             status,
@@ -553,12 +556,15 @@ export default function Home() {
     () =>
       (safetyStockInventoryList ?? [])
         .map((row) => {
+          const rawName = (row.Store_Name ?? '').trim() || '—';
+          const displayName = stripApplePrefix(rawName);
           const inventory = Number(row.Inventory) || 0;
           const safety = Number(row.Safety_Stock) || 0;
           const needed = safety - inventory;
           const status = (row.Status ?? '').trim();
           return {
-            name: (row.Store_Name ?? '').trim() || '—',
+            name: displayName,
+            store_name: rawName,
             current: inventory > 0 ? inventory : 0,
             needed: needed > 0 ? needed : 0,
             status,
@@ -1888,12 +1894,15 @@ export default function Home() {
                               <BarChart
                                 layout="vertical"
                                 data={safetyStockInventoryList.map((row) => {
+                                  const rawName = (row.Store_Name ?? '').trim() || '—';
+                                  const displayName = stripApplePrefix(rawName);
                                   const inventory = Number(row.Inventory) || 0;
                                   const safety = Number(row.Safety_Stock) || 0;
                                   const diff = inventory - safety;
                                   const status = (row.Status ?? '').trim() || '정상';
                                   return {
-                                    name: (row.Store_Name ?? '').trim() || '—',
+                                    name: displayName,
+                                    store_name: rawName,
                                     잠긴돈: Number(row.Frozen_Money) || 0,
                                     상태: status,
                                     inventory,
@@ -1944,9 +1953,16 @@ export default function Home() {
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3]"
                           >
                             <option value="">선택하세요</option>
-                            {Array.from(new Set(safetyStockInventoryList.map((r) => r.Store_Name))).sort().map((name) => (
-                              <option key={name} value={name}>{name}</option>
-                            ))}
+                            {Array.from(new Set(safetyStockInventoryList.map((r) => (r.Store_Name ?? '').trim()).filter(Boolean)))
+                              .sort()
+                              .map((rawName) => {
+                                const label = stripApplePrefix(rawName);
+                                return (
+                                  <option key={rawName} value={rawName}>
+                                    {label}
+                                  </option>
+                                );
+                              })}
                           </select>
                         </div>
                         <div>
