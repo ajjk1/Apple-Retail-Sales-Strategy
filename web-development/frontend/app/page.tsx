@@ -549,6 +549,26 @@ export default function Home() {
         .slice(0, 5),
     [safetyStockInventoryList],
   );
+  const dangerTop5 = useMemo(
+    () =>
+      (safetyStockInventoryList ?? [])
+        .map((row) => {
+          const inventory = Number(row.Inventory) || 0;
+          const safety = Number(row.Safety_Stock) || 0;
+          const needed = safety - inventory;
+          const status = (row.Status ?? '').trim();
+          return {
+            name: (row.Store_Name ?? '').trim() || '—',
+            current: inventory > 0 ? inventory : 0,
+            needed: needed > 0 ? needed : 0,
+            status,
+          };
+        })
+        .filter((r) => r.status === '위험' && r.needed > 0)
+        .sort((a, b) => b.needed - a.needed)
+        .slice(0, 5),
+    [safetyStockInventoryList],
+  );
   const [showDemandDashboard, setShowDemandDashboard] = useState(false);
   const [forecastData, setForecastData] = useState<{
     yearly_quantity: { year: number; quantity: number }[];
@@ -1679,75 +1699,158 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 과잉 재고 현황: 과잉 재고량 기준 Top 5 (막대 + 라인) */}
+                  {/* 과잉 재고 현황 & 관리자 코멘트 */}
                   {overstockTop5.length > 0 && (
-                    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
-                      <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">과잉 재고 현황</h3>
-                      <p className="text-xs text-[#86868b] mb-3">
-                        과잉 재고량 기준 Top 5 매장을 기준으로, Frozen Money(₩)와 과잉 재고 수량(대)을 함께 보여줍니다.
-                      </p>
-                      <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={overstockTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
-                            <XAxis
-                              dataKey="name"
-                              tick={{ fontSize: 11 }}
-                              interval={0}
-                              tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
-                            />
-                            <YAxis
-                              yAxisId="left"
-                              tick={{ fontSize: 11 }}
-                              stroke="#6e6e73"
-                              tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
-                            />
-                            <YAxis
-                              yAxisId="right"
-                              orientation="right"
-                              tick={{ fontSize: 11 }}
-                              stroke="#6e6e73"
-                              tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}대`}
-                            />
-                            <Tooltip
-                              formatter={(value: number, name: string, props: { payload?: any }) => {
-                                if (name === 'frozen') {
-                                  return [`₩${(Number(value) || 0).toLocaleString()}`, 'Frozen Money'];
-                                }
-                                if (name === 'overstock_qty') {
-                                  return [`${(Number(value) || 0).toLocaleString()}대`, '과잉 재고 수량'];
-                                }
-                                return [value, name];
-                              }}
-                              labelFormatter={(label) => `매장: ${label}`}
-                            />
-                            <Bar yAxisId="left" dataKey="frozen" radius={[4, 4, 0, 0]} name="Frozen Money">
-                              {overstockTop5.map((_, index) => (
-                                <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                              ))}
-                            </Bar>
-                            <Line
-                              yAxisId="right"
-                              type="monotone"
-                              dataKey="overstock_qty"
-                              stroke="#111827"
-                              strokeWidth={2}
-                              dot={(props) => {
-                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
-                                if (cx == null || cy == null) return null;
-                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
-                                return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
-                              }}
-                              activeDot={(props) => {
-                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
-                                if (cx == null || cy == null) return null;
-                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
-                                return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
-                              }}
-                              name="과잉 재고 수량"
-                            />
-                          </ComposedChart>
-                        </ResponsiveContainer>
+                    <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">과잉 재고 현황</h3>
+                        <p className="text-xs text-[#86868b] mb-3">
+                          과잉 재고량 기준 Top 5 매장을 기준으로, Frozen Money(₩)와 과잉 재고 수량(대)을 함께 보여줍니다.
+                        </p>
+                        <div className="w-full h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={overstockTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                              <XAxis
+                                dataKey="name"
+                                tick={{ fontSize: 11 }}
+                                interval={0}
+                                tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                              />
+                              <YAxis
+                                yAxisId="left"
+                                tick={{ fontSize: 11 }}
+                                stroke="#6e6e73"
+                                tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
+                              />
+                              <YAxis
+                                yAxisId="right"
+                                orientation="right"
+                                tick={{ fontSize: 11 }}
+                                stroke="#6e6e73"
+                                tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}대`}
+                              />
+                              <Tooltip
+                                formatter={(value: number, name: string, props: { payload?: any }) => {
+                                  if (name === 'frozen') {
+                                    return [`₩${(Number(value) || 0).toLocaleString()}`, 'Frozen Money'];
+                                  }
+                                  if (name === 'overstock_qty') {
+                                    return [`${(Number(value) || 0).toLocaleString()}대`, '과잉 재고 수량'];
+                                  }
+                                  return [value, name];
+                                }}
+                                labelFormatter={(label) => `매장: ${label}`}
+                              />
+                              <Bar yAxisId="left" dataKey="frozen" radius={[4, 4, 0, 0]} name="Frozen Money">
+                                {overstockTop5.map((_, index) => (
+                                  <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                ))}
+                              </Bar>
+                              <Line
+                                yAxisId="right"
+                                type="monotone"
+                                dataKey="overstock_qty"
+                                stroke="#111827"
+                                strokeWidth={2}
+                                dot={(props) => {
+                                  const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                  if (cx == null || cy == null) return null;
+                                  const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                  return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
+                                }}
+                                activeDot={(props) => {
+                                  const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                  if (cx == null || cy == null) return null;
+                                  const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                  return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
+                                }}
+                                name="과잉 재고 수량"
+                              />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
+                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-2">과잉재고 관리자 코멘트</h3>
+                        <p className="text-xs text-[#86868b] mb-3">
+                          과잉 재고 상위 매장에 대한 프로모션·이동 계획을 간단히 메모해 두는 영역입니다.
+                        </p>
+                        <div className="text-xs text-[#1d1d1f] bg-[#f5f5f7] border border-gray-200 rounded-lg p-3 leading-relaxed">
+                          <p className="font-medium mb-1">예시 코멘트</p>
+                          <p className="mb-1">- 주말 20% 플래시 세일 진행 예정</p>
+                          <p>- 재고가 부족한 명동점으로 50개 이동 지시</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 위험 품목: 차트 & 관리자 코멘트 */}
+                  {dangerTop5.length > 0 && (
+                    <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">위험 품목</h3>
+                        <p className="text-xs text-[#86868b] mb-3">
+                          위험 품목 재고량 기준 Top 5 매장을 대상으로, 현재고(남색)와 목표 안전 재고까지 필요한 발주량(빨강)을 스택 막대로 표시합니다.
+                        </p>
+                        <div className="w-full h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={dangerTop5}
+                              margin={{ top: 8, right: 24, left: 8, bottom: 24 }}
+                            >
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                              <XAxis
+                                dataKey="name"
+                                tick={{ fontSize: 11 }}
+                                interval={0}
+                                tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                              />
+                              <YAxis
+                                tick={{ fontSize: 11 }}
+                                stroke="#6e6e73"
+                                tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}${QUANTITY_UNIT}`}
+                              />
+                              <Tooltip
+                                formatter={(value: number, name: string) => {
+                                  if (name === 'current') {
+                                    return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '현재 재고'];
+                                  }
+                                  if (name === 'needed') {
+                                    return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '필요 발주량'];
+                                  }
+                                  return [value, name];
+                                }}
+                                labelFormatter={(label) => `매장: ${label}`}
+                              />
+                              <Bar
+                                dataKey="current"
+                                stackId="danger"
+                                name="current"
+                                fill="#1d4ed8"
+                                radius={[4, 4, 0, 0]}
+                              />
+                              <Bar
+                                dataKey="needed"
+                                stackId="danger"
+                                name="needed"
+                                fill="#dc2626"
+                                radius={[0, 0, 4, 4]}
+                              />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
+                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-2">위험 품목 관리자 코멘트</h3>
+                        <p className="text-xs text-[#86868b] mb-3">
+                          재고 부족 위험이 높은 품목에 대해 발주·입고 계획을 기록하는 영역입니다.
+                        </p>
+                        <div className="text-xs text-[#1d1d1f] bg-[#f5f5f7] border border-gray-200 rounded-lg p-3 leading-relaxed">
+                          <p className="font-medium mb-1">예시 코멘트</p>
+                          <p className="mb-1">- 본사 물류창고에 긴급 재고 요청 완료 (2/25 도착 예정)</p>
+                          <p>- A 벤더사에 긴급 발주 넣었음</p>
+                        </div>
                       </div>
                     </div>
                   )}
