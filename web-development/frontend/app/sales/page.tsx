@@ -501,7 +501,7 @@ export default function SalesPage() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-6 pt-6 mb-2">
                   <h3 className="text-sm font-medium text-[#6e6e73]">
-                    {selectedCountryForStoreSales ? `${formatCountryDisplay(selectedCountryForStoreSales)} 상점별 연간 매출` : 'Store_Name별 연간 매출'}
+                    {selectedCountryForStoreSales ? `${formatCountryDisplay(selectedCountryForStoreSales)} 상점별 연간 매출` : '상점별 연간 매출'}
                   </h3>
                   {selectedCountryForStoreSales && (
                     <button
@@ -514,15 +514,15 @@ export default function SalesPage() {
                   )}
                 </div>
                 <p className="text-xs text-[#86868b] px-6 mb-2">
-                  * {selectedCountryForStoreSales ? '국가 하위 분류 Store_Name (해당 국가 매장별)' : '매장별'} 연간 매출 (2020~2024)
+                  * {selectedCountryForStoreSales ? '해당 국가 상점별' : '상점별'} 연간 매출 (2020~2024)
                 </p>
-                <div className="px-6 pb-6 min-w-0" style={{ minHeight: 300, height: countryStoreLoading || storeSalesData.length === 0 ? 300 : Math.min(600, Math.max(300, storeSalesData.length * 44)) }}>
+                <div className="px-6 pb-6 min-w-0 overflow-visible" style={{ minHeight: 300, height: countryStoreLoading || storeSalesData.length === 0 ? 300 : Math.min(800, Math.max(300, storeSalesData.length * 50)) }}>
                   {countryStoreLoading ? (
                     <p className="text-sm text-[#6e6e73] text-center py-12">상점 데이터 로딩 중...</p>
                   ) : storeSalesData.length === 0 ? (
                     <p className="text-sm text-[#6e6e73] text-center py-12">해당 국가에 스토어 데이터가 없습니다.</p>
                   ) : (
-                  <ResponsiveContainer width="100%" height="100%" minHeight={280}>
+                  <ResponsiveContainer width="100%" height={Math.max(280, Math.min(800, storeSalesData.length * 50))} minHeight={280}>
                     <BarChart
                       layout="vertical"
                       data={storeSalesData.map((s) => ({
@@ -537,11 +537,12 @@ export default function SalesPage() {
                       <YAxis
                         type="category"
                         dataKey="label"
-                        width={260}
-                        tick={{ fontSize: 10 }}
+                        width={300}
+                        tick={{ fontSize: storeSalesData.length > 25 ? 9 : 10 }}
                         stroke="#6e6e73"
                         interval={0}
-                        tickMargin={4}
+                        tickMargin={6}
+                        angle={0}
                       />
                       <Tooltip
                         formatter={(v: unknown) => [`$${Number(v).toLocaleString()}`, '매출']}
@@ -643,22 +644,23 @@ export default function SalesPage() {
                                 </div>
                                 <div style={{ width: '100%', height: 240, overflow: 'visible' }}>
                                   <ResponsiveContainer width="100%" height={240}>
-                                    <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
+                                    <PieChart margin={{ top: 24, right: 24, bottom: 56, left: 24 }}>
                                       <Pie
                                         data={pieData}
                                         dataKey="value"
                                         nameKey="name"
                                         cx="50%"
-                                        cy="50%"
-                                        innerRadius="40%"
-                                        outerRadius="85%"
+                                        cy="45%"
+                                        innerRadius="38%"
+                                        outerRadius="72%"
                                         paddingAngle={2}
-                                        label={({ name, percent }: { name?: string; percent?: number }) => {
-                                          const pct = percent != null ? Math.round(percent * 1000) / 10 : 0;
-                                          if ((percent ?? 0) < 0.06) return `${pct}%`;
-                                          return `${name ?? ''} ${pct}%`;
+                                        label={({ percent }: { percent?: number }) => {
+                                          const p = percent != null ? percent : 0;
+                                          if (p < 0.05) return ''; // 5% 미만은 라벨 숨김 → 겹침 방지
+                                          const pct = Math.round(p * 1000) / 10;
+                                          return `${pct}%`;
                                         }}
-                                        labelLine={{ strokeWidth: 1 }}
+                                        labelLine={false}
                                         onClick={(entry: { name?: string }) => {
                                           const name = entry?.name;
                                           if (name) setSelectedCategoryForBarChart((prev) => (prev === name ? null : name));
@@ -692,6 +694,7 @@ export default function SalesPage() {
                                           );
                                         }}
                                       />
+                                      <Legend layout="horizontal" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: 10, flexWrap: 'wrap', justifyContent: 'center' }} iconSize={10} iconType="square" />
                                     </PieChart>
                                   </ResponsiveContainer>
                                 </div>
@@ -741,7 +744,7 @@ export default function SalesPage() {
                                       <Bar dataKey="sales" name={selectedCategoryForBarChart} fill={BAR_COLORS[categoryKeys.indexOf(selectedCategoryForBarChart) % BAR_COLORS.length]} radius={[4, 4, 0, 0]} />
                                     </BarChart>
                                   ) : (
-                                    <BarChart data={barData} margin={{ top: 8, right: 20, left: 0, bottom: 8 }} barCategoryGap="12%">
+                                    <BarChart data={barData} margin={{ top: 8, right: 72, left: 0, bottom: 8 }} barCategoryGap="12%">
                                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                                       <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                                       <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" tickFormatter={(v) => `$${(Number(v) / 1_000_000).toFixed(1)}M`} />
@@ -768,7 +771,14 @@ export default function SalesPage() {
                                         }}
                                         contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e5e7', borderRadius: 8 }}
                                       />
-                                      <Legend layout="vertical" align="center" verticalAlign="bottom" wrapperStyle={{ fontSize: 10, flexWrap: 'wrap', maxHeight: 64, gap: '2px 10px' }} />
+                                      <Legend
+                                        layout="vertical"
+                                        align="right"
+                                        verticalAlign="middle"
+                                        wrapperStyle={{ paddingLeft: 12 }}
+                                        iconSize={10}
+                                        iconType="square"
+                                      />
                                       {categoryKeys.map((cat, i) => (
                                         <Bar key={cat} dataKey={cat} name={cat} fill={BAR_COLORS[i % BAR_COLORS.length]} stackId="q" radius={[0, 0, 0, 0]} />
                                       ))}

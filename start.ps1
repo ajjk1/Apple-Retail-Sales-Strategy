@@ -112,16 +112,17 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 $hostIp = "192.168.0.43"
-$backendPath = Join-Path $PSScriptRoot "backend"
-$frontendPath = Join-Path $PSScriptRoot "frontend"
+$webDevRoot = Join-Path $PSScriptRoot "web-development"
+$backendPath = Join-Path $webDevRoot "backend"
+$frontendPath = Join-Path $webDevRoot "frontend"
 
 Write-Host ""
 Write-Host "=== Apple Retail Dashboard ===" -ForegroundColor Cyan
-Write-Host "  순서: 포트 정리 -> Backend($hostIp:8000) -> Health 체크 -> Frontend(3000)" -ForegroundColor Gray
+Write-Host "  순서: 포트 정리 -> 가상환경 확인 -> Backend($hostIp:8000) -> Health 체크 -> Frontend(3000)" -ForegroundColor Gray
 Write-Host ""
 
 # Step 0: 포트 8000/8001 정리 (기존 프로세스로 인한 404 방지)
-Write-Host "[0/4] Port 8000 cleanup..." -ForegroundColor Yellow
+Write-Host "[0/5] Port 8000 cleanup..." -ForegroundColor Yellow
 $pids = @()
 try {
     $conn8000 = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
@@ -138,17 +139,48 @@ try {
 } catch { }
 Write-Host ""
 
-# Step 1: Backend (호스트 $hostIp 에서 리스닝)
-Write-Host "[1/4] Backend starting ($hostIp`:8000)..." -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$backendPath'; Write-Host '=== FastAPI Backend ($hostIp`:8000) ===' -ForegroundColor Green; uvicorn main:app --reload --host $hostIp --port 8000"
+# Step 1: 가상환경 확인 (backend\.venv 또는 backend\venv, 없으면 .venv 생성 후 pip install)
+$venvDir = Join-Path $backendPath ".venv"
+$venvAlt = Join-Path $backendPath "venv"
+$activateScript = $null
+if (Test-Path (Join-Path $venvDir "Scripts\Activate.ps1")) {
+    $activateScript = ".\.venv\Scripts\Activate.ps1"
+} elseif (Test-Path (Join-Path $venvAlt "Scripts\Activate.ps1")) {
+    $activateScript = ".\venv\Scripts\Activate.ps1"
+}
+if (-not $activateScript) {
+    Write-Host "[1/5] 가상환경 없음 -> backend\.venv 생성 및 패키지 설치..." -ForegroundColor Yellow
+    Push-Location $backendPath
+    try {
+        python -m venv .venv
+        & (Join-Path $venvDir "Scripts\pip.exe") install -r requirements.txt -q
+        $activateScript = ".\.venv\Scripts\Activate.ps1"
+        Write-Host "  .venv 생성 및 requirements.txt 설치 완료" -ForegroundColor Green
+    } catch {
+        Write-Host "  가상환경 생성 실패. 시스템 Python으로 실행합니다." -ForegroundColor Yellow
+        $activateScript = $null
+    }
+    Pop-Location
+} else {
+    Write-Host "[1/5] 가상환경 사용: $activateScript" -ForegroundColor Green
+}
+
+# Step 2: Backend (가상환경 활성화 후 uvicorn, 호스트 $hostIp 에서 리스닝)
+Write-Host "[2/5] Backend starting ($hostIp`:8000)..." -ForegroundColor Green
+$backendCmd = "Set-Location '$backendPath'; "
+if ($activateScript) {
+    $backendCmd += "& '$activateScript'; "
+}
+$backendCmd += "Write-Host '=== FastAPI Backend (로컬 미리보기: 8000) ===' -ForegroundColor Green; uvicorn main:app --reload --host 0.0.0.0 --port 8000"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", $backendCmd
 Start-Sleep -Seconds 10
 
-# Step 2: Wait for backend health ($hostIp:8000)
-Write-Host "[2/4] Waiting for backend..." -ForegroundColor Yellow
+# Step 3: Wait for backend health (localhost:8000)
+Write-Host "[3/5] Waiting for backend..." -ForegroundColor Yellow
 $maxAttempts = 30
 $attempt = 0
 $ready = $false
-$healthUri = "http://${hostIp}:8000/api/health"
+$healthUri = "http://127.0.0.1:8000/api/health"
 while ($attempt -lt $maxAttempts) {
     try {
         $null = Invoke-WebRequest -Uri $healthUri -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
@@ -166,19 +198,21 @@ if (-not $ready) {
 }
 Start-Sleep -Seconds 2
 
-# Step 3: Frontend
-Write-Host "[3/4] Frontend starting..." -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$frontendPath'; Write-Host '=== Next.js Frontend ===' -ForegroundColor Green; npm run dev"
+# Step 4: Frontend
+Write-Host "[4/5] Frontend starting..." -ForegroundColor Green
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$frontendPath'; Write-Host '=== Next.js Frontend ===' -ForegroundColor Green; npm run dev"
 Start-Sleep -Seconds 8
 
 Write-Host ""
-Write-Host "[4/4] Done!" -ForegroundColor Green
+Write-Host "[5/5] Done! 로컬 미리보기 준비됨" -ForegroundColor Green
 Write-Host ""
-Write-Host "  --- 호스트 주소 ($hostIp) ---" -ForegroundColor Yellow
-Write-Host "  대시보드 (프론트)  http://${hostIp}:3000" -ForegroundColor Cyan
-Write-Host "  API 문서          http://${hostIp}:8000/docs" -ForegroundColor Cyan
-Write-Host "  API 상태          http://${hostIp}:8000/api/health" -ForegroundColor Cyan
+Write-Host "  --- 로컬 미리보기 (이 PC에서 보기) ---" -ForegroundColor Yellow
+Write-Host "  대시보드 (프론트)  http://localhost:3000" -ForegroundColor Cyan
+Write-Host "  API 문서          http://localhost:8000/docs" -ForegroundColor Cyan
+Write-Host "  API 상태          http://localhost:8000/api/health" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "  (같은 네트워크 다른 기기: http://${hostIp}:3000 / ${hostIp}:8000)" -ForegroundColor Gray
 Write-Host "  (API 404 시: 포트 8000 정리 후 start.ps1 재실행 · 상세: README.md)" -ForegroundColor Gray
 Write-Host ""
-Start-Process "http://${hostIp}:3000"
+Start-Process "http://localhost:3000"
+Start-Process "http://localhost:8000/docs"
