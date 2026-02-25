@@ -1006,6 +1006,19 @@ if _realtime_file.exists():
     except Exception as e:
         print(f"[Apple Retail API] Real-time execution and performance dashboard.py 로드 실패: {e}")
 
+# Inventory Optimization 모듈: 과잉 재고 현황(대륙·국가·상점·카테고리 순) 전용
+get_overstock_status_by_region = None
+_inv_opt_file = _model_path("05.Inventory Optimization", "Inventory Optimization") / "Inventory Optimization.py"
+if _inv_opt_file.exists() and load_sales_dataframe is not None:
+    try:
+        _inv_opt_spec = importlib.util.spec_from_file_location("inv_opt", _inv_opt_file)
+        _inv_opt_module = importlib.util.module_from_spec(_inv_opt_spec)
+        _inv_opt_module.load_sales_dataframe = load_sales_dataframe
+        _inv_opt_spec.loader.exec_module(_inv_opt_module)
+        get_overstock_status_by_region = getattr(_inv_opt_module, "get_overstock_status_by_region", None)
+    except Exception as e:
+        print(f"[Apple Retail API] Inventory Optimization (get_overstock_status_by_region) 로드 실패: {e}")
+
 
 def _run_integration_report():
     """
@@ -1917,6 +1930,18 @@ def api_safety_stock_inventory_list(status_filter: str | None = None):
         return get_inventory_list(status_filter=filters)
     except Exception as e:
         print(f"[Apple Retail API] api_safety_stock_inventory_list 오류: {e}")
+        return []
+
+
+@app.get("/api/safety-stock-overstock-status")
+def api_safety_stock_overstock_status():
+    """Inventory Action Center: 과잉 재고 현황 카드용. 대륙별·국가별·상점별 구분, 카테고리별 순."""
+    if get_overstock_status_by_region is None:
+        return []
+    try:
+        return get_overstock_status_by_region()
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock_overstock_status 오류: {e}")
         return []
 
 

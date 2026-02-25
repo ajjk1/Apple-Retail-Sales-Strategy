@@ -39,6 +39,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   GET /api/safety-stock-sales-by-store-period | get_sales_by_store_six_month(category) | 카테고리별 상점·6개월 구간 판매 수량
   GET /api/safety-stock-kpi         | get_kpi_summary()                         | [Action Center] KPI: 동결자금, Danger/Overstock, 예상 매출
   GET /api/safety-stock-inventory-list | get_inventory_list(status_filter)   | [Action Center] 재고 리스트(매장·제품별, Frozen_Money 내림차순)
+  GET /api/safety-stock-overstock-status | get_overstock_status_by_region()  | [Action Center] 과잉 재고 현황 카드(대륙·국가·상점 구분, 카테고리별 순)
   GET /api/inventory-critical-alerts | get_inventory_critical_alerts()         | [3.4.4] 실시간 재고·예측 신뢰도 경고 (Health_Index < 70)
 
   데이터 소스: SQL 전용 — load_sales_dataframe() (load_sales_data.py → 01.data/*.sql).
@@ -51,6 +52,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   - inventory_Optimization_F_logic.py 통합: get_kpi_summary, get_inventory_list 추가.
   - 데이터 소스: SQL 전용(load_sales_dataframe → 01.data/*.sql). 모델: arima_model.joblib 전용.
   - [Inventory Action Center] 전용 로직은 본 파일에만 두고, UI↔API↔함수 매핑 문서화.
+  - 과잉 재고 현황 카드: get_overstock_status_by_region() 추가 (대륙·국가·상점 구분, 카테고리별 순 정렬).
 ----------------------------------------------------------------------
 
 [모듈화] 본 파일은 load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
@@ -403,6 +405,85 @@ def get_inventory_list(status_filter: list | None = None):
         agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
         agg = agg.fillna(0)
         return agg[["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]].to_dict(orient="records")
+
+
+# [Inventory Action Center] 과잉 재고 현황 카드: 대륙·국가·상점 구분, 카테고리별 정렬용
+COUNTRY_TO_CONTINENT = {
+    "United States": "North America", "Canada": "North America", "Mexico": "North America",
+    "United Kingdom": "Europe", "France": "Europe", "Germany": "Europe", "Austria": "Europe",
+    "Italy": "Europe", "Spain": "Europe", "Netherlands": "Europe", "Switzerland": "Europe",
+    "Japan": "Asia", "China": "Asia", "South Korea": "Asia", "Singapore": "Asia",
+    "Hong Kong": "Asia", "Macau": "Asia", "India": "Asia", "Thailand": "Asia",
+    "Taiwan": "Asia", "UAE": "Asia", "United Arab Emirates": "Asia",
+    "Australia": "Oceania", "New Zealand": "Oceania",
+    "Colombia": "South America", "Brazil": "South America", "Argentina": "South America",
+}
+
+
+def get_overstock_status_by_region():
+    """
+    [Inventory Action Center] 과잉 재고 현황 카드용.
+    대륙별·국가별·상점별 구분, 카테고리별 순으로 정렬한 목록 반환.
+    - 반환: [{"continent", "country", "store_name", "overstock_qty", "frozen_money", "category"}, ...]
+    - 정렬: Continent → Country → Category(대표) → Store_Name
+    """
+    df = load_sales_dataframe()
+    if df is None or df.empty:
+        return []
+    df = run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns:
+        return []
+    df = df[df["Status"] == "Overstock"].copy()
+    if df.empty:
+        return []
+
+    store_col = "Store_Name" if "Store_Name" in df.columns else ("store_name" if "store_name" in df.columns else None)
+    country_col = "Country" if "Country" in df.columns else ("country" if "country" in df.columns else None)
+    cat_col = "category_name" if "category_name" in df.columns else ("Category_Name" if "Category_Name" in df.columns else None)
+    if not store_col:
+        return []
+
+    df["_overstock_qty"] = (pd.to_numeric(df["Inventory"], errors="coerce").fillna(0) - pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)).clip(lower=0)
+    df["_frozen"] = pd.to_numeric(df["Frozen_Money"], errors="coerce").fillna(0)
+    df["_country"] = df[country_col].astype(str).str.strip() if country_col and country_col in df.columns else ""
+    df["_continent"] = df["_country"].map(lambda c: COUNTRY_TO_CONTINENT.get(c, c or "Unknown"))
+    df["_category"] = df[cat_col].astype(str).str.strip() if cat_col and cat_col in df.columns else ""
+
+    # (Store, Country, Category)별 overstock_qty, frozen 합계
+    group_cols = [store_col, "_country", "_continent", "_category"]
+    agg_detail = df.groupby(group_cols, as_index=False).agg(
+        overstock_qty=("_overstock_qty", "sum"),
+        frozen_money=("_frozen", "sum"),
+    )
+    # 상점별 대표 카테고리: 해당 상점에서 overstock_qty가 가장 큰 카테고리
+    store_primary = agg_detail.loc[agg_detail.groupby([store_col, "_country"])["overstock_qty"].idxmax()][[store_col, "_country", "_category"]]
+    store_primary = store_primary.rename(columns={"_category": "primary_category"})
+
+    # 상점(대륙·국가·상점)별 합계
+    store_agg = agg_detail.groupby([store_col, "_country", "_continent"], as_index=False).agg(
+        overstock_qty=("overstock_qty", "sum"),
+        frozen_money=("frozen_money", "sum"),
+    )
+    store_agg = store_agg.merge(store_primary, on=[store_col, "_country"], how="left")
+    store_agg["primary_category"] = store_agg["primary_category"].fillna("")
+
+    # 정렬: 대륙 → 국가 → 카테고리(대표) → 상점명
+    store_agg = store_agg.sort_values(
+        by=["_continent", "_country", "primary_category", store_col],
+        ascending=[True, True, True, True],
+    ).reset_index(drop=True)
+
+    out = []
+    for _, row in store_agg.iterrows():
+        out.append({
+            "continent": str(row["_continent"]).strip() or "Unknown",
+            "country": str(row["_country"]).strip() or "Unknown",
+            "store_name": str(row[store_col]).strip() if pd.notna(row[store_col]) else "",
+            "overstock_qty": int(round(float(row["overstock_qty"]), 0)),
+            "frozen_money": float(row["frozen_money"]),
+            "category": str(row["primary_category"]).strip() or "",
+        })
+    return out
 
 
 def get_inventory_critical_alerts(limit: int = 50):

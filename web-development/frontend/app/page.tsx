@@ -520,6 +520,10 @@ export default function Home() {
     { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]
   >([]);
   const [safetyStockInventoryListLoading, setSafetyStockInventoryListLoading] = useState(false);
+  /** 과잉 재고 현황 카드: 대륙·국가·상점 구분, 카테고리별 순 (API 전용) */
+  const [overstockStatusByRegion, setOverstockStatusByRegion] = useState<
+    { continent: string; country: string; store_name: string; overstock_qty: number; frozen_money: number; category: string }[]
+  >([]);
   /** 상태 필터: '' | '위험' | '과잉' (한글) */
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('');
   /** 관리자 코멘트: 선택된 매장명 */
@@ -528,7 +532,7 @@ export default function Home() {
   const [inventoryComments, setInventoryComments] = useState<{ store_name: string; product_name?: string; comment: string; author: string; created_at: string }[]>([]);
   const [inventoryCommentsLoading, setInventoryCommentsLoading] = useState(false);
   const [saveCommentLoading, setSaveCommentLoading] = useState(false);
-  const overstockTop5 = useMemo(
+  const overstockTop5Fallback = useMemo(
     () =>
       (safetyStockInventoryList ?? [])
         .map((row) => {
@@ -552,6 +556,20 @@ export default function Home() {
         .slice(0, 5),
     [safetyStockInventoryList],
   );
+  /** 과잉 재고 현황 차트용: 대륙·국가·상점 구분·카테고리 순 우선, 없으면 기존 Top5 폴백 */
+  const overstockChartData = useMemo(() => {
+    if (overstockStatusByRegion.length > 0) {
+      return overstockStatusByRegion.slice(0, 12).map((row) => ({
+        name: [row.continent, row.country, stripApplePrefix((row.store_name ?? '').trim() || '—')].join(' / '),
+        shortName: stripApplePrefix((row.store_name ?? '').trim()) || '—',
+        store_name: (row.store_name ?? '').trim(),
+        overstock_qty: row.overstock_qty,
+        frozen: row.frozen_money,
+        category: row.category || '',
+      }));
+    }
+    return (overstockTop5Fallback ?? []).map((r) => ({ ...r, shortName: r.name, category: '' }));
+  }, [overstockStatusByRegion, overstockTop5Fallback]);
   const dangerTop5 = useMemo(
     () =>
       (safetyStockInventoryList ?? [])
@@ -796,6 +814,13 @@ export default function Home() {
       if (Array.isArray(json)) setSafetyStockInventoryList(json as { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]);
       else setSafetyStockInventoryList([]);
     }).catch(() => setSafetyStockInventoryList([])).finally(() => setSafetyStockInventoryListLoading(false));
+    // 과잉 재고 현황 카드: 대륙·국가·상점 구분, 카테고리별 순
+    apiGet<{ continent?: string; country?: string; store_name?: string; overstock_qty?: number; frozen_money?: number; category?: string }[]>(
+      '/api/safety-stock-overstock-status'
+    ).then((json) => {
+      if (Array.isArray(json)) setOverstockStatusByRegion(json);
+      else setOverstockStatusByRegion([]);
+    }).catch(() => setOverstockStatusByRegion([]));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
 
   // 매장별 재고 목록/필터 변경 시, 선택 매장이 목록에 없으면 선택 해제 (동기화)
@@ -1721,23 +1746,25 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* 과잉 재고 현황 & 관리자 코멘트 */}
-                  {overstockTop5.length > 0 && (
+                  {/* 과잉 재고 현황 & 관리자 코멘트: 대륙·국가·상점 구분, 카테고리별 순 */}
+                  {overstockChartData.length > 0 && (
                     <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                       <div className="rounded-xl border border-gray-200 bg-white p-4">
                         <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">과잉 재고 현황</h3>
                         <p className="text-xs text-[#86868b] mb-3">
-                          과잉 재고량 기준 Top 5 매장을 기준으로, Frozen Money(₩)와 과잉 재고 수량(대)을 함께 보여줍니다.
+                          대륙별·국가별·상점별 구분, 카테고리별 순으로 Frozen Money(₩)와 과잉 재고 수량(대)을 표시합니다.
                         </p>
                         <div className="w-full h-64">
                           <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={overstockTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
+                            <ComposedChart data={overstockChartData} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
                               <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                               <XAxis
                                 dataKey="name"
-                                tick={{ fontSize: 11 }}
+                                tick={{ fontSize: 10 }}
                                 interval={0}
-                                tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                                angle={overstockChartData[0]?.name?.includes(' / ') ? -12 : 0}
+                                textAnchor={overstockChartData[0]?.name?.includes(' / ') ? 'end' : 'middle'}
+                                tickFormatter={(v: string) => (v && v.length > 14 ? `${v.slice(0, 14)}…` : v)}
                               />
                               <YAxis
                                 yAxisId="left"
@@ -1753,7 +1780,7 @@ export default function Home() {
                                 tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}대`}
                               />
                               <Tooltip
-                                formatter={(value: number, name: string, props: { payload?: any }) => {
+                                formatter={(value: number, name: string, props: { payload?: { category?: string } }) => {
                                   if (name === 'frozen') {
                                     return [`₩${(Number(value) || 0).toLocaleString()}`, 'Frozen Money'];
                                   }
@@ -1762,10 +1789,14 @@ export default function Home() {
                                   }
                                   return [value, name];
                                 }}
-                                labelFormatter={(label) => `매장: ${label}`}
+                                labelFormatter={(label, payload) => {
+                                  const p = payload?.[0]?.payload;
+                                  if (p?.category) return `${label} [${p.category}]`;
+                                  return label;
+                                }}
                               />
                               <Bar yAxisId="left" dataKey="frozen" radius={[4, 4, 0, 0]} name="Frozen Money">
-                                {overstockTop5.map((_, index) => (
+                                {overstockChartData.map((_, index) => (
                                   <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                                 ))}
                               </Bar>
