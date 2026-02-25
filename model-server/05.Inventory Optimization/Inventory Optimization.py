@@ -40,6 +40,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   GET /api/safety-stock-kpi         | get_kpi_summary()                         | [Action Center] KPI: 동결자금, Danger/Overstock, 예상 매출
   GET /api/safety-stock-inventory-list | get_inventory_list(status_filter)   | [Action Center] 재고 리스트(매장·제품별, Frozen_Money 내림차순)
   GET /api/safety-stock-overstock-status | get_overstock_status_by_region()  | [Action Center] 과잉 재고 현황 카드(대륙·국가·상점 구분, 카테고리별 순)
+  GET /api/safety-stock-risky-items-top5 | get_risky_items_top5()            | [Action Center] 위험 품목 top 5 (발주량·지출 금액 기준)
   GET /api/inventory-critical-alerts | get_inventory_critical_alerts()         | [3.4.4] 실시간 재고·예측 신뢰도 경고 (Health_Index < 70)
 
   데이터 소스: SQL 전용 — load_sales_dataframe() (load_sales_data.py → 01.data/*.sql).
@@ -54,6 +55,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   - [Inventory Action Center] 전용 로직은 본 파일에만 두고, UI↔API↔함수 매핑 문서화.
   - 과잉 재고 현황 카드: get_overstock_status_by_region() 추가 (대륙·국가·상점 구분, 카테고리별 순 정렬).
   - 과잉 재고 타겟: 상품별 과잉 배수 100%~320% → 300%~450% (np.random.uniform 1.0~3.2 → 3.0~4.5).
+  - 위험 품목 top 5 카드: get_risky_items_top5() 추가 (발주량=목표재고−현재재고, 지출=발주량×가격, 지출 기준 상위 5).
 ----------------------------------------------------------------------
 
 [모듈화] 본 파일은 load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
@@ -567,6 +569,63 @@ def get_overstock_top5_by_quantity():
             "overstock_qty": int(row["overstock_qty"]),
             "overstock_pct": float(row["overstock_pct"]),
             "savings_amount": float(row["savings_amount"]),
+        })
+    return out
+
+
+def get_risky_items_top5():
+    """
+    [Inventory Action Center] 위험 품목 top 5 카드용.
+    현재 재고 < 목표 재고(안전 재고)인 상품별로 발주량·지출 금액을 산출하여 지출 금액 기준 상위 5개 반환.
+    - 발주량 = max(0, 목표 재고 - 현재 재고)
+    - 지출 금액 = 발주량 × 해당 상품 단가(price)
+    반환: [{"rank", "product_name", "current_inventory", "target_inventory", "order_quantity", "expenditure"}, ...]
+    """
+    df = load_sales_dataframe()
+    if df is None or df.empty:
+        return []
+    df = run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns:
+        return []
+    need = ["Product_Name", "Inventory", "Safety_Stock"]
+    if not all(c in df.columns for c in need):
+        return []
+
+    inv = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0)
+    safety = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)
+    df = df.copy()
+    df["_inv"] = inv
+    df["_safety"] = safety
+
+    agg = df.groupby("Product_Name", as_index=False).agg(
+        current_inventory=("_inv", "sum"),
+        target_inventory=("_safety", "sum"),
+    )
+    agg["current_inventory"] = agg["current_inventory"].round(0).astype(int)
+    agg["target_inventory"] = agg["target_inventory"].round(0).astype(int)
+    agg["order_quantity"] = (agg["target_inventory"] - agg["current_inventory"]).clip(lower=0)
+    agg = agg[agg["order_quantity"] > 0].copy()
+    if agg.empty:
+        return []
+
+    if "price" in df.columns:
+        price_map = df.groupby("Product_Name")["price"].first()
+        agg["price"] = agg["Product_Name"].map(price_map)
+    else:
+        agg["price"] = 0.0
+    agg["price"] = pd.to_numeric(agg["price"], errors="coerce").fillna(0)
+    agg["expenditure"] = (agg["order_quantity"] * agg["price"]).round(0)
+    agg = agg.sort_values(by="expenditure", ascending=False).head(5).reset_index(drop=True)
+
+    out = []
+    for i, (_, row) in enumerate(agg.iterrows(), start=1):
+        out.append({
+            "rank": i,
+            "product_name": str(row["Product_Name"]).strip() or "",
+            "current_inventory": int(row["current_inventory"]),
+            "target_inventory": int(row["target_inventory"]),
+            "order_quantity": int(row["order_quantity"]),
+            "expenditure": float(row["expenditure"]),
         })
     return out
 

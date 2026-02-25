@@ -1006,9 +1006,10 @@ if _realtime_file.exists():
     except Exception as e:
         print(f"[Apple Retail API] Real-time execution and performance dashboard.py 로드 실패: {e}")
 
-# Inventory Optimization 모듈: 과잉 재고 현황(대륙·국가·상점·카테고리 순) 및 TOP5 수량 기준
+# Inventory Optimization 모듈: 과잉 재고 현황(대륙·국가·상점·카테고리 순), TOP5 수량 기준, 위험 품목 top 5
 get_overstock_status_by_region = None
 get_overstock_top5_by_quantity = None
+get_risky_items_top5 = None
 _inv_opt_file = _model_path("05.Inventory Optimization", "Inventory Optimization") / "Inventory Optimization.py"
 if _inv_opt_file.exists() and load_sales_dataframe is not None:
     try:
@@ -1018,6 +1019,7 @@ if _inv_opt_file.exists() and load_sales_dataframe is not None:
         _inv_opt_spec.loader.exec_module(_inv_opt_module)
         get_overstock_status_by_region = getattr(_inv_opt_module, "get_overstock_status_by_region", None)
         get_overstock_top5_by_quantity = getattr(_inv_opt_module, "get_overstock_top5_by_quantity", None)
+        get_risky_items_top5 = getattr(_inv_opt_module, "get_risky_items_top5", None)
     except Exception as e:
         print(f"[Apple Retail API] Inventory Optimization (get_overstock_status_by_region) 로드 실패: {e}")
 
@@ -1967,6 +1969,18 @@ def api_safety_stock_overstock_top5():
         return get_overstock_top5_by_quantity()
     except Exception as e:
         print(f"[Apple Retail API] api_safety_stock_overstock_top5 오류: {e}")
+        return []
+
+
+@app.get("/api/safety-stock-risky-items-top5")
+def api_safety_stock_risky_items_top5():
+    """Inventory Action Center: 위험 품목 top 5. 발주량(목표재고−현재재고)·지출 금액(발주량×가격) 기준 상위 5개."""
+    if get_risky_items_top5 is None:
+        return []
+    try:
+        return get_risky_items_top5()
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock_risky_items_top5 오류: {e}")
         return []
 
 

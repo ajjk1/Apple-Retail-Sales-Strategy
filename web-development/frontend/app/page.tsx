@@ -505,6 +505,10 @@ export default function Home() {
   const [overstockTop5ByQty, setOverstockTop5ByQty] = useState<
     { product_name: string; current_inventory: number; target_inventory: number; overstock_qty: number; overstock_pct: number; savings_amount: number }[]
   >([]);
+  /** 위험 품목 top 5: 순위·상품명·현재재고·목표재고·발주량·지출 금액 (DB 기준) */
+  const [riskyItemsTop5, setRiskyItemsTop5] = useState<
+    { rank: number; product_name: string; current_inventory: number; target_inventory: number; order_quantity: number; expenditure: number }[]
+  >([]);
   /** 상태 필터: '' | '위험' | '과잉' (한글) */
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('');
   /** 관리자 코멘트: 선택된 매장명 */
@@ -853,6 +857,13 @@ export default function Home() {
       if (Array.isArray(json)) setOverstockTop5ByQty(json);
       else setOverstockTop5ByQty([]);
     }).catch(() => setOverstockTop5ByQty([]));
+    // 위험 품목 top 5 (발주량·지출 금액 기준, DB)
+    apiGet<{ rank: number; product_name: string; current_inventory: number; target_inventory: number; order_quantity: number; expenditure: number }[]>(
+      '/api/safety-stock-risky-items-top5'
+    ).then((json) => {
+      if (Array.isArray(json)) setRiskyItemsTop5(json);
+      else setRiskyItemsTop5([]);
+    }).catch(() => setRiskyItemsTop5([]));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
 
   // 매장별 재고 목록/필터 변경 시, 선택 매장이 목록에 없으면 선택 해제 (동기화)
@@ -1909,6 +1920,44 @@ export default function Home() {
                           </ResponsiveContainer>
                         </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 위험 품목 top 5: DB 기준 테이블 (순위·상품명·현재재고·목표재고·발주량·지출 금액) */}
+                  {riskyItemsTop5.length > 0 && (
+                    <div className="mb-6">
+                      <div className="rounded-xl border border-gray-700 bg-[#2d2d2f] p-4">
+                        <h3 className="text-sm font-semibold text-white mb-1">위험 품목 top 5</h3>
+                        <p className="text-xs text-[#a1a1a6] mb-3">
+                          현재 재고가 목표 재고(안전 재고)보다 낮은 상품 중, 발주 필요량·예상 지출 금액 기준 상위 5개입니다.
+                        </p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="border-b border-gray-600">
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">순위</th>
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">상품명</th>
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">현재 재고</th>
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">목표 재고</th>
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">발주량</th>
+                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">지출 금액</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {riskyItemsTop5.map((row) => (
+                                <tr key={row.rank} className="border-b border-gray-600/80">
+                                  <td className="text-sm text-white py-2 pr-3">{row.rank}</td>
+                                  <td className="text-sm text-white py-2 pr-3">{row.product_name || '—'}</td>
+                                  <td className="text-sm text-white py-2 pr-3">{(row.current_inventory ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-white py-2 pr-3">{(row.target_inventory ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-white py-2 pr-3">{(row.order_quantity ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-white py-2 pr-3">₩{(row.expenditure ?? 0).toLocaleString()}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
                   )}
