@@ -5,7 +5,8 @@
 ## rewrites (next.config.js)
 
 - `source: '/api/:path*'` → `destination: \`${backendUrl}/api/:path*\``
-- backendUrl: `BACKEND_URL` 또는 `NEXT_PUBLIC_API_URL` 또는 프로덕션 시 `https://apple-retail-study-apple-retail-sales-strategy.hf.space`
+- backendUrl: `BACKEND_URL` 또는 `NEXT_PUBLIC_API_URL` 또는 프로덕션 시 **`lib/backend-url.js`** 의 `PRODUCTION_BACKEND_URL` (단일 소스).  
+- **vercel.json** 의 rewrites destination URL은 위와 동일하게 유지 (JSON이라 import 불가, 수동 동기화).
 
 ## 백엔드 라우트 ↔ 프론트 호출
 

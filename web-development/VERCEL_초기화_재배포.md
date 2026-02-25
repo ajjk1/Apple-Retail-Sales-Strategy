@@ -16,13 +16,16 @@
 
 ---
 
-## 방법 2: Root Directory 다시 확인 후 재배포
+## 방법 2: Root Directory 다시 확인 후 재배포 (가장 흔한 오류 원인)
 
-1. **Vercel** → **web-development** → **Settings** → **General**
+1. **Vercel** → 해당 프로젝트 → **Settings** → **General**
 2. **Root Directory** 확인:
-   - 저장소 루트에 `web-development` 폴더가 있으면: **`web-development/frontend`**
-   - 저장소 루트가 이미 `frontend`만 있으면: 비워 두기
+   - 저장소가 **ajjk1 전체** (model-server, web-development 포함)이면: **`web-development/frontend`** 필수
+   - 저장소가 **web-development만**이면: **`frontend`**
+   - ⚠️ 비워 두면 루트에 package.json이 없어 빌드 실패
 3. **Save** 후 **Deployments** → 맨 위 배포 **Redeploy** (캐시 해제 옵션 켜기)
+
+상세: 저장소 루트의 **`VERCEL_GITHUB_SETUP.md`** 참고.
 
 ---
 
@@ -30,9 +33,9 @@
 
 1. **Vercel** → **web-development** → **Settings** → **Git**
 2. **Disconnect** (Git 연결 해제)
-3. 같은 프로젝트에서 **Connect Git Repository** → **GitHub** → **ajjk1/web-development** 선택
+3. 같은 프로젝트에서 **Connect Git Repository** → **GitHub** → **ajjk1** 또는 **ajjk1/web-development** 선택
 4. **Configure** 단계에서:
-   - **Root Directory**: `web-development/frontend` 입력
+   - **Root Directory**: 저장소가 ajjk1 전체면 **`web-development/frontend`**, web-development만이면 **`frontend`**
    - **Framework Preset**: Next.js
 5. **Deploy** 로 첫 배포 실행
 

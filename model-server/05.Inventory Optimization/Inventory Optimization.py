@@ -486,6 +486,72 @@ def get_overstock_status_by_region():
     return out
 
 
+def get_overstock_top5_by_quantity():
+    """
+    [Inventory Action Center] 과잉 재고 TOP 5 (수량 기준).
+    상품별로 현재 재고·목표 재고·과잉 수량·과잉 비율·절감 가능 금액을 집계하여 수량 기준 상위 5개 반환.
+    - 현재 재고·목표 재고: 매장별 집계 후 상품별 합산
+    - 과잉 수량: 현재 재고 - 목표 재고 (0 이상만)
+    - 절감 가능 금액: 과잉 수량 × 해당 상품 단가 (price)
+    반환: [{"product_name", "current_inventory", "target_inventory", "overstock_qty", "overstock_pct", "savings_amount"}, ...]
+    """
+    df = load_sales_dataframe()
+    if df is None or df.empty:
+        return []
+    df = run_inventory_pipeline(df)
+    if df is None or df.empty or "Product_Name" not in df.columns:
+        return []
+    need = ["Product_Name", "Inventory", "Safety_Stock", "Status"]
+    if not all(c in df.columns for c in need):
+        return []
+    df = df[df["Status"] == "Overstock"].copy()
+    if df.empty:
+        return []
+
+    inv = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0)
+    safety = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)
+    df["_inv"] = inv
+    df["_safety"] = safety
+
+    agg = df.groupby("Product_Name", as_index=False).agg(
+        current_inventory=("_inv", "sum"),
+        target_inventory=("_safety", "sum"),
+    )
+    agg["current_inventory"] = agg["current_inventory"].round(0).astype(int)
+    agg["target_inventory"] = agg["target_inventory"].round(0).astype(int)
+    agg["overstock_qty"] = (agg["current_inventory"] - agg["target_inventory"]).clip(lower=0)
+    agg = agg[agg["overstock_qty"] > 0].copy()
+    if agg.empty:
+        return []
+
+    if "price" in df.columns:
+        price_map = df.groupby("Product_Name")["price"].first()
+        agg["price"] = agg["Product_Name"].map(price_map)
+    else:
+        agg["price"] = 0.0
+    agg["price"] = pd.to_numeric(agg["price"], errors="coerce").fillna(0)
+    agg["savings_amount"] = (agg["overstock_qty"] * agg["price"]).round(0)
+    agg["overstock_pct"] = np.where(
+        agg["target_inventory"] > 0,
+        (agg["overstock_qty"] / agg["target_inventory"] * 100).round(1),
+        0.0,
+    )
+
+    agg = agg.sort_values(by="overstock_qty", ascending=False).head(5).reset_index(drop=True)
+
+    out = []
+    for _, row in agg.iterrows():
+        out.append({
+            "product_name": str(row["Product_Name"]).strip() or "",
+            "current_inventory": int(row["current_inventory"]),
+            "target_inventory": int(row["target_inventory"]),
+            "overstock_qty": int(row["overstock_qty"]),
+            "overstock_pct": float(row["overstock_pct"]),
+            "savings_amount": float(row["savings_amount"]),
+        })
+    return out
+
+
 def get_inventory_critical_alerts(limit: int = 50):
     """
     [3.4.4 실시간 재고 및 예측 신뢰도 경고]

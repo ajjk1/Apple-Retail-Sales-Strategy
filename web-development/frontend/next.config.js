@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 // /api/* 요청은 rewrites로 백엔드로 전달. Vercel/프로덕션에서는 destination을 리터럴 HF URL로만 고정 (Target: localhost 방지).
-const PRODUCTION_BACKEND_URL = 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+const { PRODUCTION_BACKEND_URL } = require('./lib/backend-url.js');
 
 // 프로덕션 rewrites: 하드코딩된 HF URL만 사용 (환경 변수 미참조로 빌드/런타임에서 localhost로 바뀔 가능성 제거)
 const PRODUCTION_REWRITES = [

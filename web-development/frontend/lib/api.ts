@@ -3,9 +3,10 @@
  * API 경로는 반드시 '/api/...' 상대 경로로 호출하면 next.config.js rewrites 규칙(source: /api/:path*)과 일치합니다.
  * NEXT_PUBLIC_API_URL 미설정/ localhost 시 vercel.app에서는 fallback 사용.
  */
+const { PRODUCTION_BACKEND_URL } = require('./backend-url.js');
 const API_BASE_FALLBACK =
   (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_FALLBACK_BACKEND_URL) ||
-  'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+  PRODUCTION_BACKEND_URL;
 
 function isUnsafeApiBase(url: string | undefined): boolean {
   if (url == null || typeof url !== 'string') return true;
@@ -15,7 +16,8 @@ function isUnsafeApiBase(url: string | undefined): boolean {
   return false;
 }
 
-function getApiBase(): string {
+/** 클라이언트용 API 베이스 URL (상대경로 시 ''). export for page.tsx health/apple-data 등. */
+export function getApiBase(): string {
   if (typeof window === 'undefined') return '';
   const env = process.env.NEXT_PUBLIC_API_URL;
   const isVercel = typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app');

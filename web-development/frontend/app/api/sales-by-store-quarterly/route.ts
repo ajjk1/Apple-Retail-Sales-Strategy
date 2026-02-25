@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const { PRODUCTION_BACKEND_URL: PROD_URL } = require('../../../lib/backend-url.js');
 /** 서버 전용: BACKEND_URL 또는 NEXT_PUBLIC_API_URL. Vercel/프로덕션에서는 localhost 미사용, HF Space 상수 사용. */
-const PRODUCTION_BACKEND_URL = process.env.NEXT_PUBLIC_FALLBACK_BACKEND_URL || 'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
+const PRODUCTION_BACKEND_URL = process.env.NEXT_PUBLIC_FALLBACK_BACKEND_URL || PROD_URL;
 
 function isProductionLike(): boolean {
   return process.env.VERCEL === '1' || process.env.NODE_ENV === 'production';

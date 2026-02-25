@@ -13,6 +13,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, ComposedChart, BarChart, Bar, Area, Line, Scatter, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { getContinentInfo, resolveCountryToEn, stripApplePrefix } from '../lib/country';
+import { apiGet, getApiBase } from '../lib/api';
 
 const GlobeMap = dynamic(() => import('./components/GlobeMap'), {
   ssr: false,
@@ -107,47 +108,19 @@ const PIE_YEARS = [2020, 2021, 2022, 2023, 2024] as const;
 const QUANTITY_UNIT = '대';
 const QUANTITY_LABEL = `수량(단위: ${QUANTITY_UNIT})`;
 
-/** 클라이언트 전용: NEXT_PUBLIC_API_URL 사용. 미설정/ localhost 시 vercel.app이면 NEXT_PUBLIC_FALLBACK_BACKEND_URL 또는 HF Space 상수 사용. */
-const API_BASE_FALLBACK =
-  (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_FALLBACK_BACKEND_URL) ||
-  'https://apple-retail-study-apple-retail-sales-strategy.hf.space';
-
-function isUnsafeApiBase(url: string | undefined): boolean {
-  if (url == null || typeof url !== 'string') return true;
-  const u = url.trim().toLowerCase();
-  if (!u.startsWith('http')) return true;
-  if (u.includes('localhost') || u.startsWith('http://127.0.0.1') || u.startsWith('http://[::1]')) return true;
-  return false;
+/** Inventory Action Center: API는 Danger/Overstock/Normal 반환. UI는 위험/과잉/정상 표시·필터. */
+function inventoryStatusToDisplay(apiStatus: string): string {
+  const s = (apiStatus ?? '').trim();
+  if (s === 'Danger') return '위험';
+  if (s === 'Overstock') return '과잉';
+  if (s === 'Normal') return '정상';
+  return s || '정상';
 }
-
-function getApiBase(): string {
-  if (typeof window === 'undefined') return '';
-  const env = process.env.NEXT_PUBLIC_API_URL;
-  const isVercel = typeof window !== 'undefined' && window.location?.hostname?.includes('vercel.app');
-  if (env != null && typeof env === 'string' && env.trim() !== '' && !isUnsafeApiBase(env)) return env.trim().replace(/\/$/, '');
-  if (isVercel) return API_BASE_FALLBACK;
-  return '';
-}
-
-const API_TIMEOUT_MS = 20000;
-
-/** API 호출: NEXT_PUBLIC_API_URL 사용. 미설정 시 상대경로만. localhost 미사용. */
-async function apiGet<T = unknown>(path: string): Promise<T | null> {
-  const fixed = getApiBase();
-  const bases = fixed ? [fixed] : [''];
-  for (const base of bases) {
-    try {
-      const url = base ? `${base}${path}` : path;
-      const ac = new AbortController();
-      const t = setTimeout(() => ac.abort(), API_TIMEOUT_MS);
-      const res = await fetch(url, { signal: ac.signal });
-      clearTimeout(t);
-      if (res?.ok) return (await res.json()) as T;
-    } catch {
-      continue;
-    }
-  }
-  return null;
+function inventoryStatusToApi(display: string): string {
+  const s = (display ?? '').trim();
+  if (s === '위험') return 'Danger';
+  if (s === '과잉') return 'Overstock';
+  return s;
 }
 
 /** 분기별 수량 차트용 Tooltip - Line+Scatter 중복 방지, 1개만 표시 */
@@ -268,10 +241,10 @@ function StoreInventoryTooltip({
   const diff = Number(row.diff ?? current - safety) || 0;
   const frozen = Number(row.frozen ?? 0) || 0;
   const status = (row.statusLabel ?? '') as string;
-
-  const isOverstock = status === '과잉';
-  const isDanger = status === '위험';
-  const statusLabel = isOverstock ? '과잉 재고 (Overstock)' : isDanger ? '위험 품목 (Danger)' : status || '정상 재고';
+  const displayStatus = inventoryStatusToDisplay(status);
+  const isOverstock = displayStatus === '과잉';
+  const isDanger = displayStatus === '위험';
+  const statusLabel = isOverstock ? '과잉 재고 (Overstock)' : isDanger ? '위험 품목 (Danger)' : displayStatus || '정상 재고';
   const diffLabel = isDanger ? '추가 필요 수량' : '조정/처분 목표 수량';
 
   return (
@@ -524,6 +497,10 @@ export default function Home() {
   const [overstockStatusByRegion, setOverstockStatusByRegion] = useState<
     { continent: string; country: string; store_name: string; overstock_qty: number; frozen_money: number; category: string }[]
   >([]);
+  /** 과잉 재고 TOP 5 (수량 기준): 상품별 현재/목표 재고, 과잉 수량·비율·절감 가능 금액 */
+  const [overstockTop5ByQty, setOverstockTop5ByQty] = useState<
+    { product_name: string; current_inventory: number; target_inventory: number; overstock_qty: number; overstock_pct: number; savings_amount: number }[]
+  >([]);
   /** 상태 필터: '' | '위험' | '과잉' (한글) */
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('');
   /** 관리자 코멘트: 선택된 매장명 */
@@ -551,7 +528,7 @@ export default function Home() {
             status,
           };
         })
-        .filter((r) => r.status === '과잉' && r.overstock_qty > 0)
+        .filter((r) => (r.status === 'Overstock' || r.status === '과잉') && r.overstock_qty > 0)
         .sort((a, b) => b.overstock_qty - a.overstock_qty)
         .slice(0, 5),
     [safetyStockInventoryList],
@@ -588,7 +565,7 @@ export default function Home() {
             status,
           };
         })
-        .filter((r) => r.status === '위험' && r.needed > 0)
+        .filter((r) => (r.status === 'Danger' || r.status === '위험') && r.needed > 0)
         .sort((a, b) => b.needed - a.needed)
         .slice(0, 5),
     [safetyStockInventoryList],
@@ -808,8 +785,9 @@ export default function Home() {
         })));
       }).catch(() => setInventoryComments([])),
     ]).finally(() => { setSafetyStockLoading(false); setInventoryCommentsLoading(false); });
-    // 매장별 재고 목록 (한글 상태 필터: 위험, 과잉)
-    const filterParam = inventoryStatusFilter ? `?status_filter=${encodeURIComponent(inventoryStatusFilter)}` : '';
+    // 매장별 재고 목록: API는 Danger/Overstock 사용 → 한글 선택 시 영문으로 전달
+    const apiStatusFilter = inventoryStatusToApi(inventoryStatusFilter);
+    const filterParam = apiStatusFilter ? `?status_filter=${encodeURIComponent(apiStatusFilter)}` : '';
     apiGet<unknown[]>(`/api/safety-stock-inventory-list${filterParam}`).then((json) => {
       if (Array.isArray(json)) setSafetyStockInventoryList(json as { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]);
       else setSafetyStockInventoryList([]);
@@ -818,9 +796,28 @@ export default function Home() {
     apiGet<{ continent?: string; country?: string; store_name?: string; overstock_qty?: number; frozen_money?: number; category?: string }[]>(
       '/api/safety-stock-overstock-status'
     ).then((json) => {
-      if (Array.isArray(json)) setOverstockStatusByRegion(json);
-      else setOverstockStatusByRegion([]);
+      if (!Array.isArray(json)) {
+        setOverstockStatusByRegion([]);
+        return;
+      }
+      setOverstockStatusByRegion(
+        json.map((row) => ({
+          continent: row.continent ?? '',
+          country: row.country ?? '',
+          store_name: row.store_name ?? '',
+          overstock_qty: Number(row.overstock_qty) || 0,
+          frozen_money: Number(row.frozen_money) || 0,
+          category: row.category ?? '',
+        }))
+      );
     }).catch(() => setOverstockStatusByRegion([]));
+    // 과잉 재고 TOP 5 (수량 기준)
+    apiGet<{ product_name: string; current_inventory: number; target_inventory: number; overstock_qty: number; overstock_pct: number; savings_amount: number }[]>(
+      '/api/safety-stock-overstock-top5'
+    ).then((json) => {
+      if (Array.isArray(json)) setOverstockTop5ByQty(json);
+      else setOverstockTop5ByQty([]);
+    }).catch(() => setOverstockTop5ByQty([]));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
 
   // 매장별 재고 목록/필터 변경 시, 선택 매장이 목록에 없으면 선택 해제 (동기화)
@@ -1746,6 +1743,79 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* 과잉 재고 TOP 5 (수량 기준): 현재/목표 비교·절감 가능 금액·프로그레스 바 */}
+                  {overstockTop5ByQty.length > 0 && (
+                    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#1d1d1f]">과잉 재고 TOP 5 (수량 기준)</h3>
+                          <p className="text-xs text-[#86868b] mt-0.5">
+                            현재 재고와 목표 재고를 나란히 비교해 얼마나 줄일 수 있는지를 보여줍니다.
+                          </p>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded bg-gray-100 text-[#6e6e73] border border-gray-200">기준: 시뮬레이션 데이터</span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-[#6e6e73]">
+                              <th className="py-2 pr-3 font-medium w-12">순위</th>
+                              <th className="py-2 pr-3 font-medium">상품명</th>
+                              <th className="py-2 pr-3 font-medium text-right">현재 재고</th>
+                              <th className="py-2 pr-3 font-medium text-right">목표 재고</th>
+                              <th className="py-2 pr-3 font-medium text-right">과잉 수량</th>
+                              <th className="py-2 pl-3 font-medium text-right">절감 가능 금액</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {overstockTop5ByQty.map((row, idx) => {
+                              const rank = idx + 1;
+                              const current = Number(row.current_inventory) || 0;
+                              const target = Number(row.target_inventory) || 0;
+                              const overQty = Number(row.overstock_qty) || 0;
+                              const pct = Number(row.overstock_pct) || 0;
+                              const savings = Number(row.savings_amount) || 0;
+                              const targetPct = target > 0 ? (target / current) * 100 : 0;
+                              const overPct = current > 0 ? (overQty / current) * 100 : 0;
+                              return (
+                                <tr key={rank} className="border-b border-gray-100 hover:bg-gray-50/50">
+                                  <td className="py-3 pr-3 text-[#1d1d1f] font-medium">{rank}</td>
+                                  <td className="py-3 pr-3">
+                                    <div>
+                                      <span className="text-[#1d1d1f] font-medium">{row.product_name || '—'}</span>
+                                      <div className="mt-1.5 w-full max-w-xs h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                                        <div
+                                          className="h-full bg-[#34c759] shrink-0"
+                                          style={{ width: `${Math.min(targetPct, 100)}%` }}
+                                          title="목표 재고"
+                                        />
+                                        <div
+                                          className="h-full bg-[#f59e0b] shrink-0"
+                                          style={{ width: `${Math.min(overPct, 100)}%` }}
+                                          title="과잉 수량"
+                                        />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{current.toLocaleString()}</td>
+                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{target.toLocaleString()}</td>
+                                  <td className="py-3 pr-3 text-right">
+                                    <span className="text-amber-700 font-medium">
+                                      {overQty.toLocaleString()} ({pct}%)
+                                    </span>
+                                  </td>
+                                  <td className="py-3 pl-3 text-right text-amber-700 font-medium">
+                                    ₩{savings.toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
                   {/* 과잉 재고 현황 & 관리자 코멘트: 대륙·국가·상점 구분, 카테고리별 순 */}
                   {overstockChartData.length > 0 && (
                     <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1946,17 +2016,18 @@ export default function Home() {
                                   const inventory = Number(row.Inventory) || 0;
                                   const safety = Number(row.Safety_Stock) || 0;
                                   const diff = inventory - safety;
-                                  const status = (row.Status ?? '').trim() || '정상';
+                                  const apiStatus = (row.Status ?? '').trim() || 'Normal';
+                                  const displayStatus = inventoryStatusToDisplay(apiStatus);
                                   return {
                                     name: displayName,
                                     store_name: rawName,
                                     잠긴돈: Number(row.Frozen_Money) || 0,
-                                    상태: status,
+                                    상태: displayStatus,
                                     inventory,
                                     safety,
                                     diff,
                                     frozen: Number(row.Frozen_Money) || 0,
-                                    statusLabel: status,
+                                    statusLabel: displayStatus,
                                   };
                                 })}
                                 margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
@@ -1967,11 +2038,11 @@ export default function Home() {
                                 <Tooltip content={<StoreInventoryTooltip />} />
                                 <Bar dataKey="잠긴돈" radius={[0, 4, 4, 0]} isAnimationActive={true}>
                                   {safetyStockInventoryList.map((row, i) => {
-                                    const status = (row.Status ?? '').trim();
+                                    const displayStatus = inventoryStatusToDisplay((row.Status ?? '').trim());
                                     let fill = '#3b82f6';
-                                    if (status === '위험') fill = '#dc2626';
-                                    else if (status === '과잉') fill = '#f59e0b';
-                                    else if (status === '정상') fill = '#22c55e';
+                                    if (displayStatus === '위험') fill = '#dc2626';
+                                    else if (displayStatus === '과잉') fill = '#f59e0b';
+                                    else if (displayStatus === '정상') fill = '#22c55e';
                                     return <Cell key={`cell-${i}`} fill={fill} />;
                                   })}
                                 </Bar>

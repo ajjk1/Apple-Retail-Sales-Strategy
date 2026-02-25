@@ -16,16 +16,22 @@ Next.js 프론트엔드를 Vercel에 배포하는 방법입니다. **백엔드(F
 
 1. **https://vercel.com** 접속 → 로그인
 2. **Add New...** → **Project**
-3. **Import Git Repository**에서 `ajjk1/web-development` 선택 (또는 GitHub 연동 후 저장소 목록에서 선택)
+3. **Import Git Repository**에서 `ajjk1/web-development` 또는 **ajjk1** (전체 저장소) 선택
 4. **Configure Project** 화면에서:
 
    | 설정 | 값 | 비고 |
    |------|-----|------|
    | **Framework Preset** | Next.js | 자동 감지됨 |
-   | **Root Directory** | `web-development/frontend` 또는 `frontend` | 저장소 루트가 `ajjk1` 전체면 `web-development/frontend`, 저장소가 이미 `web-development`면 `frontend` |
+   | **Root Directory** | **반드시 설정** (아래 표 참고) | ⚠️ 비워 두면 빌드 실패. 저장소 루트에 Next 앱이 없음 |
    | **Build Command** | `npm run build` | 기본값 유지 |
    | **Output Directory** | (비움) | Next.js 기본값 |
    | **Install Command** | `npm install` | 기본값 유지 |
+
+   **Root Directory 값 (저장소에 따라):**
+   - 연결한 저장소가 **ajjk1 전체** (model-server, web-development 포함) → **`web-development/frontend`**
+   - 연결한 저장소가 **web-development만** → **`frontend`**
+
+   GitHub-Vercel 연동 오류 시 상세 안내: 저장소 루트의 **`VERCEL_GITHUB_SETUP.md`** 참고.
 
 5. **Environment Variables** (아래 3번 참고) 입력 후 **Deploy** 클릭
 

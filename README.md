@@ -77,6 +77,8 @@ npm install
 npm run dev
 ```
 
+**GitHub–Vercel 연동 오류 시:** 이 저장소는 모노레포이므로 Vercel에서 **Root Directory**를 꼭 설정해야 합니다. → **Settings** → **General** → **Root Directory**: `web-development/frontend`. 자세한 내용은 **`VERCEL_GITHUB_SETUP.md`** 참고.
+
 ### 접속 주소
 
 | 용도 | 주소 |

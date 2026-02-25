@@ -1006,8 +1006,9 @@ if _realtime_file.exists():
     except Exception as e:
         print(f"[Apple Retail API] Real-time execution and performance dashboard.py 로드 실패: {e}")
 
-# Inventory Optimization 모듈: 과잉 재고 현황(대륙·국가·상점·카테고리 순) 전용
+# Inventory Optimization 모듈: 과잉 재고 현황(대륙·국가·상점·카테고리 순) 및 TOP5 수량 기준
 get_overstock_status_by_region = None
+get_overstock_top5_by_quantity = None
 _inv_opt_file = _model_path("05.Inventory Optimization", "Inventory Optimization") / "Inventory Optimization.py"
 if _inv_opt_file.exists() and load_sales_dataframe is not None:
     try:
@@ -1016,6 +1017,7 @@ if _inv_opt_file.exists() and load_sales_dataframe is not None:
         _inv_opt_module.load_sales_dataframe = load_sales_dataframe
         _inv_opt_spec.loader.exec_module(_inv_opt_module)
         get_overstock_status_by_region = getattr(_inv_opt_module, "get_overstock_status_by_region", None)
+        get_overstock_top5_by_quantity = getattr(_inv_opt_module, "get_overstock_top5_by_quantity", None)
     except Exception as e:
         print(f"[Apple Retail API] Inventory Optimization (get_overstock_status_by_region) 로드 실패: {e}")
 
@@ -1918,15 +1920,26 @@ def api_safety_stock_kpi():
         return {"total_frozen_money": 0.0, "danger_count": 0, "overstock_count": 0, "predicted_demand": 0, "expected_revenue": 0.0}
 
 
+def _normalize_status_filter(value: str) -> str:
+    """한글/영문 상태 필터를 API용 Danger/Overstock으로 통일."""
+    v = (value or "").strip()
+    if v in ("위험", "Danger"):
+        return "Danger"
+    if v in ("과잉", "Overstock"):
+        return "Overstock"
+    return v
+
+
 @app.get("/api/safety-stock-inventory-list")
 def api_safety_stock_inventory_list(status_filter: str | None = None):
-    """Inventory Action Center: 매장별 재고 목록 (Status 필터: 위험, 과잉 또는 Danger, Overstock)."""
+    """Inventory Action Center: 매장별 재고 목록 (Status 필터: 위험/과잉 또는 Danger/Overstock)."""
     if get_inventory_list is None:
         return []
     try:
         filters = None
         if status_filter and status_filter.strip():
-            filters = [s.strip() for s in status_filter.split(",") if s.strip()]
+            raw = [s.strip() for s in status_filter.split(",") if s.strip()]
+            filters = [ _normalize_status_filter(s) for s in raw if _normalize_status_filter(s) ]
         return get_inventory_list(status_filter=filters)
     except Exception as e:
         print(f"[Apple Retail API] api_safety_stock_inventory_list 오류: {e}")
@@ -1942,6 +1955,18 @@ def api_safety_stock_overstock_status():
         return get_overstock_status_by_region()
     except Exception as e:
         print(f"[Apple Retail API] api_safety_stock_overstock_status 오류: {e}")
+        return []
+
+
+@app.get("/api/safety-stock-overstock-top5")
+def api_safety_stock_overstock_top5():
+    """Inventory Action Center: 과잉 재고 TOP 5 (수량 기준). 상품별 현재/목표 재고, 과잉 수량·비율·절감 가능 금액."""
+    if get_overstock_top5_by_quantity is None:
+        return []
+    try:
+        return get_overstock_top5_by_quantity()
+    except Exception as e:
+        print(f"[Apple Retail API] api_safety_stock_overstock_top5 오류: {e}")
         return []
 
 

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest # 실행 환경
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3 # 코드 가져오기
+        uses: actions/checkout@v4 # 코드 가져오기
         with:
           fetch-depth: 0
           lfs: true # 대용량 파일 처리를 위해 true 설정
