@@ -37,6 +37,46 @@ interface StoreRecommendation {
   is_fallback?: boolean;
 }
 
+/** 성과 시뮬레이터 (Performance Simulator) — 투자자용 실효성 증명 */
+interface PerformanceSimulatorData {
+  scenario?: {
+    before?: { periods?: string[]; sales?: number[]; inventory_level?: number[] };
+    after?: { periods?: string[]; sales?: number[]; inventory_level?: number[] };
+    chart_data?: { period: string; sales_before: number; sales_after: number; inventory_before: number; inventory_after: number }[];
+  };
+  roi?: {
+    opportunity_cost_saved_annual?: number;
+    opportunity_cost_before?: number;
+    opportunity_cost_after?: number;
+    old_days?: number;
+    new_days?: number;
+    avg_inventory_value?: number;
+    cost_of_capital_pct?: number;
+  };
+  summary?: {
+    total_sales_lift_pct?: number;
+    return_rate_reduction_pct?: number;
+    inventory_turnover_acceleration?: number;
+    inventory_turnover_acceleration_pct?: number;
+  };
+  /** 전략 실행 후 기대 수익 시뮬레이션 (1.15배 상승 곡선) */
+  performance_lift?: {
+    periods?: string[];
+    baseline?: number[];
+    growth_15pct?: number[];
+    chart_data?: { period: string; 기존_곡선: number; 성장_곡선_15: number }[];
+    lift_rate?: number;
+    investor_message?: string;
+  };
+  investor_message?: string;
+}
+
+/** 실시간 재고 및 자금 동결 현황 (투자자용) — Frozen Money + Status → investor_alert */
+interface InventoryFrozenMoneyData {
+  items: (OverstockItem & { investor_alert?: boolean })[];
+  investor_value_message?: string;
+}
+
 /** 상점별 성장 전략 엔진 — Dynamic Weighting(상점별 맞춤형 모드) + 이익·브랜드·운영 */
 interface GrowthStrategyData {
   store_id: string;
@@ -213,6 +253,8 @@ export default function RecommendationPage() {
   const [feedbackResult, setFeedbackResult] = useState<{ clicked_items: string[]; message: string; log_path: string } | null>(null);
   const [customerJourneyFunnel, setCustomerJourneyFunnel] = useState<CustomerJourneyFunnelData | null>(null);
   const [funnelStageWeights, setFunnelStageWeights] = useState<FunnelStageWeightData | null>(null);
+  const [performanceSimulator, setPerformanceSimulator] = useState<PerformanceSimulatorData | null>(null);
+  const [inventoryFrozenMoney, setInventoryFrozenMoney] = useState<InventoryFrozenMoneyData | null>(null);
   const [selectedFunnelStage, setSelectedFunnelStage] = useState<string>('Add_to_Cart');
 
   // [4.3.2] 추천 상품 목록: userPersonalizedRec.top_3 또는 collabFilterRec.top_recommendations
@@ -407,6 +449,13 @@ export default function RecommendationPage() {
       .catch(() => setCriticalAlerts(null));
   }, []);
 
+  // 실시간 재고 및 자금 동결 현황 (투자자용 — Frozen Money + Status → 붉은색 경고)
+  useEffect(() => {
+    apiGet<InventoryFrozenMoneyData>('/api/inventory-frozen-money')
+      .then((data) => data && setInventoryFrozenMoney(data))
+      .catch(() => setInventoryFrozenMoney(null));
+  }, []);
+
   // [4.4.1] 고객 여정 퍼널 분석
   useEffect(() => {
     apiGet<CustomerJourneyFunnelData>('/api/customer-journey-funnel')
@@ -419,6 +468,13 @@ export default function RecommendationPage() {
     apiGet<FunnelStageWeightData>('/api/funnel-stage-weight')
       .then((data) => data && setFunnelStageWeights(data))
       .catch(() => setFunnelStageWeights(null));
+  }, []);
+
+  // 성과 시뮬레이터 (투자자용 실효성 증명)
+  useEffect(() => {
+    apiGet<PerformanceSimulatorData>('/api/performance-simulator')
+      .then((data) => data && setPerformanceSimulator(data))
+      .catch(() => setPerformanceSimulator(null));
   }, []);
 
   // 선택된 퍼널 단계에 따른 가중치·전략 (선택 변경 시 재조회)
@@ -627,6 +683,239 @@ export default function RecommendationPage() {
             </p>
           )}
         </div>
+
+        {/* 1. 실시간 재고 및 자금 동결 현황 (Inventory vs Frozen Money) — 투자자 모드 경고 */}
+        {inventoryFrozenMoney && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
+            <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">💰 실시간 재고 및 자금 동결 현황 (Inventory vs Frozen Money)</h2>
+            <p className="text-sm text-[#6e6e73] mb-4">
+              {inventoryFrozenMoney.investor_value_message ?? '어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다.'}
+            </p>
+            <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                  <tr className="text-left text-[#6e6e73]">
+                    <th className="py-2 pr-3">매장</th>
+                    <th className="py-2 pr-3">제품</th>
+                    <th className="py-2 pr-3 text-right">재고</th>
+                    <th className="py-2 pr-3 text-right">안전재고</th>
+                    <th className="py-2 pr-3 text-right">자금 동결 (Frozen Money)</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2">투자자 경고</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventoryFrozenMoney.items.map((row, i) => (
+                    <tr
+                      key={i}
+                      className={`border-b border-gray-100 ${(row as { investor_alert?: boolean }).investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
+                    >
+                      <td className="py-2 text-[#1d1d1f]">{row.Store_Name ?? '-'}</td>
+                      <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
+                      <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
+                      <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
+                      <td className="py-2 text-right font-medium text-[#1d1d1f]">{Number(row.Frozen_Money).toLocaleString()}</td>
+                      <td className="py-2 text-[#1d1d1f]">{row.Status ?? '-'}</td>
+                      <td className="py-2">
+                        {(row as { investor_alert?: boolean }).investor_alert ? (
+                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900">투자자 모드 가동 필요</span>
+                        ) : (
+                          <span className="text-[#86868b]">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* 2. 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy) */}
+        {recommendations && (recommendations.association?.length > 0 || recommendations.similar_store?.length > 0 || recommendations.latent_demand?.length > 0 || recommendations.trend?.length > 0) && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
+            <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">⚙️ 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy)</h2>
+            <p className="text-sm text-[#6e6e73] mb-4">
+              상점의 특성에 따라 가장 효율적인 무기를 골라 사용합니다. CTO 설계 4대 엔진이 이 상점에서 어떻게 작동하는지 확인하세요.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {(() => {
+                const a = recommendations.association ?? [];
+                const s = recommendations.similar_store ?? [];
+                const l = recommendations.latent_demand ?? [];
+                const t = recommendations.trend ?? [];
+                const scoreA = a.length ? a.reduce((sum, r) => sum + (r.lift ?? 0), 0) / a.length : 0;
+                const scoreS = s.length ? s.reduce((sum, r) => sum + (r.similarity_score ?? 0), 0) / s.length : 0;
+                const scoreL = l.length ? l.reduce((sum, r) => sum + (r.predicted_sales ?? 0), 0) / l.length : 0;
+                const scoreT = t.length ? t.reduce((sum, r) => sum + (r.growth_rate ?? 0), 0) / t.length : 0;
+                const arr = [
+                  { key: 'association', label: 'Association Engine', score: scoreA, count: a.length, msg: 'A 상품을 산 고객은 B도 삽니다 (연관 판매 강조)' },
+                  { key: 'similar_store', label: 'Similar Store', score: scoreS, count: s.length, msg: '유사 매장에서 잘 팔리는 상품을 이 매장에도' },
+                  { key: 'latent_demand', label: 'Latent Demand', score: scoreL, count: l.length, msg: '아직 안 샀지만 곧 살 고객 타겟팅' },
+                  { key: 'trend', label: 'Trend', score: scoreT, count: t.length, msg: '성장률 기반 트렌드 반영' },
+                ];
+                const maxScore = Math.max(scoreA, scoreS, scoreL, scoreT);
+                return arr.map((e) => (
+                  <div
+                    key={e.key}
+                    className={`rounded-xl border-2 p-4 ${maxScore > 0 && e.score === maxScore ? 'border-[#0071e3] bg-blue-50' : 'border-gray-200 bg-gray-50'}`}
+                  >
+                    <p className="text-xs font-semibold text-[#6e6e73] mb-1">{e.label}</p>
+                    <p className="text-sm font-medium text-[#1d1d1f] mb-2">
+                      점수 요약: {e.score.toFixed(2)} · 추천 {e.count}건
+                    </p>
+                    <p className="text-xs text-[#6e6e73]">{e.msg}</p>
+                    {maxScore > 0 && e.score === maxScore && (
+                      <span className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-[#0071e3] text-white">주도 엔진</span>
+                    )}
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* 성과 시뮬레이터 — 투자자용 실효성 증명 (Scenario / ROI / Visual Summary) */}
+        {performanceSimulator && (
+          <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
+            <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">📊 성과 시뮬레이터</h2>
+            <p className="text-xs text-[#6e6e73] mb-4">엔진 적용 전·후 매출·재고 비교 · 기회비용 절감 · 실효성 지표</p>
+
+            {performanceSimulator.investor_message && (
+              <div className="mb-6 p-4 rounded-xl bg-[#1d1d1f] text-white text-sm leading-relaxed border-l-4 border-[#0071e3]">
+                &quot;{performanceSimulator.investor_message}&quot;
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs text-[#86868b] mb-1">총 매출 상승률</p>
+                <p className="text-2xl font-bold text-[#0071e3]">
+                  +{performanceSimulator.summary?.total_sales_lift_pct ?? 0}%
+                </p>
+                <p className="text-xs text-[#6e6e73] mt-1">엔진 적용 후 시뮬레이션</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs text-[#86868b] mb-1">반품 감소율</p>
+                <p className="text-2xl font-bold text-emerald-600">
+                  {performanceSimulator.summary?.return_rate_reduction_pct ?? 0}%
+                </p>
+                <p className="text-xs text-[#6e6e73] mt-1">호환/COO 필터 효과</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                <p className="text-xs text-[#86868b] mb-1">재고 회전 가속도</p>
+                <p className="text-2xl font-bold text-amber-600">
+                  +{performanceSimulator.summary?.inventory_turnover_acceleration_pct ?? 0}%
+                </p>
+                <p className="text-xs text-[#6e6e73] mt-1">90일 → 30일 가정</p>
+              </div>
+            </div>
+
+            {performanceSimulator.roi && performanceSimulator.roi.opportunity_cost_saved_annual != null && (
+              <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
+                <p className="text-sm font-semibold text-emerald-800">💰 기회비용 절감 (ROI)</p>
+                <p className="text-xl font-bold text-emerald-700 mt-1">
+                  연간 ${(performanceSimulator.roi.opportunity_cost_saved_annual / 1000).toFixed(1)}K 절감
+                </p>
+                <p className="text-xs text-emerald-700 mt-1">
+                  재고령 {performanceSimulator.roi.old_days}일 → {performanceSimulator.roi.new_days}일 가정 · 자본비용 {((performanceSimulator.roi.cost_of_capital_pct ?? 0) * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
+
+            {performanceSimulator.scenario?.chart_data && performanceSimulator.scenario.chart_data.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📈 주차별 매출 (엔진 적용 전 vs 후)</p>
+                  <div className="h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                        <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                        <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                        <Tooltip formatter={(value: number) => [value?.toLocaleString(), '']} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="sales_before" name="엔진 적용 전" fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="sales_after" name="엔진 적용 후" fill="#0071e3" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📉 재고 수준 (소진 속도 비교)</p>
+                  <div className="h-[260px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                        <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                        <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                        <Tooltip formatter={(value: number) => [value?.toLocaleString(), '']} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Line type="monotone" dataKey="inventory_before" name="엔진 적용 전" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="inventory_after" name="엔진 적용 후" stroke="#0ea5e9" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift) — 기존 곡선 vs 성장 곡선 15% */}
+            {performanceSimulator.performance_lift?.chart_data && performanceSimulator.performance_lift.chart_data.length > 0 && (
+              <div className="mt-6 bg-white rounded-xl border-2 border-emerald-200 p-4">
+                <p className="text-sm font-semibold text-[#1d1d1f] mb-2">📈 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift)</p>
+                <p className="text-xs text-[#6e6e73] mb-3">기존 곡선: 현재 데이터 기반 매출 추이 · 성장 곡선: 엔진 적용 시나리오(매출 15% 상승, 재고 회전 가속)</p>
+                <div className="h-[260px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart data={performanceSimulator.performance_lift.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                      <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                      <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
+                      <Tooltip formatter={(value: number) => [value != null ? Number(value).toLocaleString() : '', '']} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      <Line type="monotone" dataKey="기존_곡선" name="기존 곡선" stroke="#64748b" strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="성장_곡선_15" name="성장 곡선 (15% 상승)" stroke="#059669" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+                {performanceSimulator.performance_lift.investor_message && (
+                  <p className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900 italic">
+                    &quot;{performanceSimulator.performance_lift.investor_message}&quot;
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="mt-6">
+              <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📋 Visual Summary</p>
+              <div className="overflow-x-auto">
+                <div className="h-[200px] min-w-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      layout="vertical"
+                      data={[
+                        { name: '총 매출 상승률', value: performanceSimulator.summary?.total_sales_lift_pct ?? 0, fill: '#0071e3' },
+                        { name: '반품 감소율', value: performanceSimulator.summary?.return_rate_reduction_pct ?? 0, fill: '#10b981' },
+                        { name: '재고 회전 가속도', value: performanceSimulator.summary?.inventory_turnover_acceleration_pct ?? 0, fill: '#f59e0b' },
+                      ]}
+                      margin={{ top: 8, right: 24, left: 100, bottom: 8 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                      <XAxis type="number" unit="%" domain={[0, 'auto']} tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                      <Tooltip formatter={(value: number) => [`${value}%`, '']} />
+                      <Bar dataKey="value" name="%" radius={[0, 4, 4, 0]}>
+                        {[0, 1, 2].map((i) => (
+                          <Cell key={i} fill={['#0071e3', '#10b981', '#f59e0b'][i]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* [4.1.1] 유저(상점) 맞춤형 추천 결과 — user_id, recommendations(rank, product_id, reason) */}
         {selectedStoreId && (

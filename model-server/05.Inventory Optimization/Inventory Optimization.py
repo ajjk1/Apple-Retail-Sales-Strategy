@@ -19,7 +19,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   -------------------------------------|----------------------------------------|------------------------------------------
   상단 Risk KPIs (총 잠긴 돈, Danger/Overstock 수, 예상 매출) | get_kpi_summary()              | GET /api/safety-stock-kpi
   재고 상태별 건수 (파이/요약)         | get_safety_stock_summary()             | GET /api/safety-stock
-  상세 재고 테이블 (제품·현재고·안전재고·상태·잠긴 돈) | get_inventory_list(status_filter) | GET /api/safety-stock-inventory-list
+  상세 재고 테이블 (매장·제품·현재고·안전재고·상태·잠긴 돈) | get_inventory_list(status_filter) | GET /api/safety-stock-inventory-list
   수요 예측 & 적정 재고 차트           | get_demand_forecast_chart_data()       | GET /api/safety-stock-forecast-chart
   카테고리별 상점·분기 판매 / 상품별   | get_sales_by_store_six_month(), get_sales_by_product() | GET /api/safety-stock-sales-by-store-period, ...-by-product
   실시간 재고 경고 (Health_Index < 70)  | get_inventory_critical_alerts()       | GET /api/inventory-critical-alerts
@@ -38,7 +38,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   GET /api/safety-stock-forecast-chart | get_demand_forecast_chart_data()     | 수요 예측 & 적정 재고 (예측: arima_model.joblib)
   GET /api/safety-stock-sales-by-store-period | get_sales_by_store_six_month(category) | 카테고리별 상점·6개월 구간 판매 수량
   GET /api/safety-stock-kpi         | get_kpi_summary()                         | [Action Center] KPI: 동결자금, Danger/Overstock, 예상 매출
-  GET /api/safety-stock-inventory-list | get_inventory_list(status_filter)   | [Action Center] 재고 리스트(상품별, Frozen_Money 내림차순)
+  GET /api/safety-stock-inventory-list | get_inventory_list(status_filter)   | [Action Center] 재고 리스트(매장·제품별, Frozen_Money 내림차순)
   GET /api/inventory-critical-alerts | get_inventory_critical_alerts()         | [3.4.4] 실시간 재고·예측 신뢰도 경고 (Health_Index < 70)
 
   데이터 소스: SQL 전용 — load_sales_dataframe() (load_sales_data.py → 01.data/*.sql).
@@ -339,12 +339,12 @@ def get_kpi_summary(target_product: str | None = None):
 
 def get_inventory_list(status_filter: list | None = None):
     """
-    [Inventory Action Center] 상세 재고 테이블용 (제품명·현재고·안전재고·상태·잠긴 돈).
+    [Inventory Action Center] 상세 재고 테이블용 (매장·제품명·현재고·안전재고·상태·잠긴 돈).
     안전재고 대시보드 하단 재고 리스트(테이블)용.
     
     [로직 상세]
     - 데이터 소스: SQL(load_sales_dataframe) → 메모리 캐싱으로 빠른 처리
-    - Product_Name 기준 집계 (중복 제거)
+    - 매장·제품(Store_Name, Product_Name) 단위 집계: Store_Name 있으면 (매장, 제품)별 1행, 없으면 제품별 1행
     - 정렬: Frozen_Money 내림차순 (리스크 높은 순서)
     - 필터: status_filter 지정 시 해당 Status만 반환 (예: ["Danger","Overstock"])
     - 색상 구분: 프론트엔드에서 Danger=빨강, Overstock=주황 표시
@@ -360,24 +360,49 @@ def get_inventory_list(status_filter: list | None = None):
     need = ["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money"]
     if not all(c in df.columns for c in need):
         return []
+    store_col = "Store_Name" if "Store_Name" in df.columns else ("store_name" if "store_name" in df.columns else None)
     if status_filter:
         df = df[df["Status"].isin(status_filter)]
     if df.empty:
         return []
-    agg = df.groupby("Product_Name", as_index=False).agg(
-        Inventory=("Inventory", "first"),
-        Safety_Stock=("Safety_Stock", "first"),
-        Status=("Status", "first"),
-        Frozen_Money=("Frozen_Money", "sum"),
-    )
-    if "price" in df.columns:
-        price_first = df.groupby("Product_Name")["price"].first()
-        agg["price"] = agg["Product_Name"].map(price_first)
+
+    if store_col:
+        # 매장·제품 단위 집계: (Store_Name, Product_Name)별 1행
+        agg = df.groupby([store_col, "Product_Name"], as_index=False).agg(
+            Inventory=("Inventory", "first"),
+            Safety_Stock=("Safety_Stock", "first"),
+            Status=("Status", "first"),
+            Frozen_Money=("Frozen_Money", "sum"),
+        )
+        if "price" in df.columns:
+            price_map = df.groupby([store_col, "Product_Name"])["price"].first()
+            agg["price"] = agg.apply(lambda r: price_map.get((r[store_col], r["Product_Name"]), 0.0), axis=1)
+        else:
+            agg["price"] = 0.0
+        agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
+        agg = agg.fillna(0)
+        out_cols = [store_col, "Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]
+        # API/프론트와 동일 키 사용을 위해 Store_Name으로 통일
+        if store_col != "Store_Name":
+            agg = agg.rename(columns={store_col: "Store_Name"})
+            out_cols = ["Store_Name", "Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]
+        return agg[[c for c in out_cols if c in agg.columns]].to_dict(orient="records")
     else:
-        agg["price"] = 0.0
-    agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
-    agg = agg.fillna(0)
-    return agg[["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]].to_dict(orient="records")
+        # Store 컬럼 없을 때: 기존처럼 제품별만 집계 (호환)
+        agg = df.groupby("Product_Name", as_index=False).agg(
+            Inventory=("Inventory", "first"),
+            Safety_Stock=("Safety_Stock", "first"),
+            Status=("Status", "first"),
+            Frozen_Money=("Frozen_Money", "sum"),
+        )
+        if "price" in df.columns:
+            price_first = df.groupby("Product_Name")["price"].first()
+            agg["price"] = agg["Product_Name"].map(price_first)
+        else:
+            agg["price"] = 0.0
+        agg = agg.sort_values(by="Frozen_Money", ascending=False).reset_index(drop=True)
+        agg = agg.fillna(0)
+        return agg[["Product_Name", "Inventory", "Safety_Stock", "Status", "Frozen_Money", "price"]].to_dict(orient="records")
 
 
 def get_inventory_critical_alerts(limit: int = 50):

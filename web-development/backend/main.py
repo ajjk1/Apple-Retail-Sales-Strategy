@@ -976,6 +976,7 @@ get_user_personalized_recommendations_from_realtime = None
 get_collab_filter_with_inventory_boost_from_realtime = None
 get_customer_journey_funnel_from_realtime = None
 get_funnel_stage_weight_from_realtime = None
+get_performance_simulator_from_realtime = None
 _realtime_file = _model_path(
     "05.Real-time execution and performance dashboard",
     "06.Real-time execution and performance dashboard",
@@ -1001,6 +1002,7 @@ if _realtime_file.exists():
         get_collab_filter_with_inventory_boost_from_realtime = getattr(_rt_module, "get_collab_filter_with_inventory_boost", None)
         get_customer_journey_funnel_from_realtime = getattr(_rt_module, "get_customer_journey_funnel", None)
         get_funnel_stage_weight_from_realtime = getattr(_rt_module, "get_funnel_stage_weight", None)
+        get_performance_simulator_from_realtime = getattr(_rt_module, "get_performance_simulator", None)
     except Exception as e:
         print(f"[Apple Retail API] Real-time execution and performance dashboard.py 로드 실패: {e}")
 
@@ -1918,6 +1920,34 @@ def api_safety_stock_inventory_list(status_filter: str | None = None):
         return []
 
 
+@app.get("/api/inventory-frozen-money")
+def api_inventory_frozen_money():
+    """
+    실시간 재고 및 자금 동결 현황 (투자자용).
+    Frozen_Money·Status 활용. if Frozen Money 높고 Status가 '정상'이면 investor_alert=True → 대시보드 붉은색 경고.
+    """
+    if get_inventory_list is None:
+        return {"items": [], "investor_value_message": "어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다."}
+    try:
+        items = get_inventory_list(status_filter=None)
+        if not items:
+            return {"items": [], "investor_value_message": "어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다."}
+        frozen_vals = [float(item.get("Frozen_Money") or 0) for item in items]
+        frozen_vals = [v for v in frozen_vals if v >= 0]
+        threshold = float(np.percentile(frozen_vals, 75)) if frozen_vals else 0.0
+        for item in items:
+            fm = float(item.get("Frozen_Money") or 0)
+            st = str(item.get("Status") or "").strip()
+            item["investor_alert"] = fm >= threshold and st == "정상"
+        return {
+            "items": items,
+            "investor_value_message": "어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다.",
+        }
+    except Exception as e:
+        print(f"[Apple Retail API] api_inventory_frozen_money 오류: {e}")
+        return {"items": [], "investor_value_message": "어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다."}
+
+
 @app.get("/api/inventory-critical-alerts")
 def api_inventory_critical_alerts(limit: int = 50):
     """[3.4.4] 실시간 재고·예측 신뢰도 경고. Health_Index(안전재고 대비 현재 재고 비율) < 70 인 품절 위기 항목."""
@@ -2080,6 +2110,28 @@ def api_recommendation_summary():
         return get_recommendation_summary()
     except Exception as e:
         print(f"[Apple Retail API] api_recommendation_summary 오류: {e}")
+        return fallback
+
+
+@app.get("/api/performance-simulator")
+def api_performance_simulator():
+    """
+    성과 시뮬레이터: Scenario Generator + ROI Calculator + Visual Summary.
+    투자자용 실효성 증명 — 엔진 적용 전·후 매출/재고 비교, 기회비용 절감, 매출 상승률·반품 감소율·재고 회전 가속도.
+    """
+    fallback = {
+        "scenario": {"before": {"periods": [], "sales": [], "inventory_level": []}, "after": {"periods": [], "sales": [], "inventory_level": []}, "chart_data": []},
+        "roi": {"opportunity_cost_saved_annual": 0, "old_days": 90, "new_days": 30},
+        "summary": {"total_sales_lift_pct": 0, "return_rate_reduction_pct": 0, "inventory_turnover_acceleration_pct": 0},
+        "performance_lift": {"periods": [], "baseline": [], "growth_15pct": [], "chart_data": [], "lift_rate": 1.15, "investor_message": "단순한 추측이 아닙니다. 이미 코드에 박혀 있는 15%의 상승 로직이 증명합니다."},
+        "investor_message": "투자자 여러분, 우리는 단순히 운에 맡기는 장사를 하는 것이 아닙니다. 매장마다 설치된 이 '성장 전략 엔진'이 초당 수천 번의 if 연산을 수행하며, 여러분의 자본이 단 1분도 놀지 않고 수익을 내도록 감시하고 행동합니다.",
+    }
+    if get_performance_simulator_from_realtime is None:
+        return fallback
+    try:
+        return get_performance_simulator_from_realtime()
+    except Exception as e:
+        print(f"[Apple Retail API] api_performance_simulator 오류: {e}")
         return fallback
 
 
