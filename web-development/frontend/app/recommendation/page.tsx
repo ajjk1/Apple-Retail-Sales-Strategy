@@ -564,6 +564,17 @@ export default function RecommendationPage() {
 
   const PIE_COLORS = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
+  // 실시간 재고 카드: 매장명 → 국가 (한글(영문) 표시용)
+  const storeNameToCountry = useMemo(() => {
+    const m = new Map<string, string>();
+    stores.forEach((s) => {
+      const name = stripApplePrefix(s.store_name ?? s.store_id);
+      if (name) m.set(name, s.country ?? '');
+      if (s.store_name) m.set(s.store_name.trim(), s.country ?? '');
+    });
+    return m;
+  }, [stores]);
+
   return (
     <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
       <header className="bg-white border-b border-gray-200">
@@ -588,102 +599,6 @@ export default function RecommendationPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* 필터 + 상점 선택 (대륙/국가/상점) */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6 flex flex-wrap items-center gap-4">
-          <div className="flex flex-col gap-3 flex-1 min-w-0">
-            <div className="flex flex-wrap gap-3">
-              <div className="min-w-[140px]">
-                <label className="block text-xs font-medium text-[#1d1d1f] mb-1">대륙 필터</label>
-                <select
-                  value={selectedContinent}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setSelectedContinent(next);
-                    setSelectedCountry('');
-                  }}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                  disabled={stores.length === 0}
-                >
-                  <option value="">전체</option>
-                  {continentOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="min-w-[180px]">
-                <label className="block text-xs font-medium text-[#1d1d1f] mb-1">국가 필터</label>
-                <select
-                  value={selectedCountry}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setSelectedCountry(next);
-                  }}
-                  className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                  disabled={stores.length === 0}
-                >
-                  <option value="">전체</option>
-                  {countryOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {formatCountryDisplay(c)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex-1 min-w-[220px]">
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1">분석할 상점을 선택하세요</label>
-                <select
-                  value={selectedStoreId}
-                  onChange={(e) => setSelectedStoreId(e.target.value)}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-4 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                  disabled={filteredStores.length === 0}
-                >
-                  {stores.length === 0 ? (
-                    <option value="">상점 목록 로딩 중...</option>
-                  ) : filteredStores.length === 0 ? (
-                    <option value="">필터 조건에 맞는 상점이 없습니다.</option>
-                  ) : (
-                    filteredStores.map((s) => {
-                      const rawName = s.store_name || s.store_id;
-                      const cleanedName = formatStoreDisplay(stripApplePrefix(rawName));
-                      return (
-                        <option key={s.store_id} value={s.store_id}>
-                          {cleanedName}
-                          {s.country ? ` · ${formatCountryDisplay(s.country)}` : ''}
-                        </option>
-                      );
-                    })
-                  )}
-                </select>
-              </div>
-              <div className="flex-1 min-w-[160px]">
-                <label className="block text-sm font-medium text-[#1d1d1f] mb-1">상점 타입 (성장 전략)</label>
-                <select
-                  value={storeType}
-                  onChange={(e) => setStoreType(e.target.value as 'STANDARD' | 'PREMIUM' | 'OUTLET')}
-                  className="w-full text-sm border border-gray-200 rounded-lg px-4 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
-                >
-                  <option value="STANDARD">STANDARD</option>
-                  <option value="PREMIUM">PREMIUM (CEO 가중치 2배)</option>
-                  <option value="OUTLET">OUTLET (재고령 가중치 3배)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-          {recommendations && (
-            <p className="text-sm text-[#6e6e73] bg-[#f5f5f7] px-4 py-2 rounded-lg">
-              현재 선택된 상점:{' '}
-              <strong className="text-[#1d1d1f]">
-                {formatStoreDisplay(stripApplePrefix(recommendations.store_summary?.store_name ?? selectedStoreId))}
-              </strong>
-              {recommendations.growth_strategy?.store_type && (
-                <span className="ml-2 text-[#86868b]">· 성장 전략: {recommendations.growth_strategy.store_type}</span>
-              )}
-            </p>
-          )}
-        </div>
-
         {/* 1. 실시간 재고 및 자금 동결 현황 (Inventory vs Frozen Money) — 투자자 모드 경고 */}
         {inventoryFrozenMoney && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
@@ -695,36 +610,44 @@ export default function RecommendationPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
                   <tr className="text-left text-[#6e6e73]">
-                    <th className="py-2 pr-3">매장</th>
-                    <th className="py-2 pr-3">제품</th>
+                    <th className="py-2 pr-3">국가 (한글(영문))</th>
+                    <th className="py-2 pr-3">상점 명 (한글(영문))</th>
+                    <th className="py-2 pr-3">제품 명 (한글(영문))</th>
                     <th className="py-2 pr-3 text-right">재고</th>
                     <th className="py-2 pr-3 text-right">안전재고</th>
-                    <th className="py-2 pr-3 text-right">자금 동결 (Frozen Money)</th>
+                    <th className="py-2 pr-3 text-right">자금동결 ($)</th>
                     <th className="py-2 pr-3">Status</th>
                     <th className="py-2">투자자 경고</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {inventoryFrozenMoney.items.map((row, i) => (
-                    <tr
-                      key={i}
-                      className={`border-b border-gray-100 ${(row as { investor_alert?: boolean }).investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
-                    >
-                      <td className="py-2 text-[#1d1d1f]">{row.Store_Name ?? '-'}</td>
-                      <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
-                      <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
-                      <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
-                      <td className="py-2 text-right font-medium text-[#1d1d1f]">{Number(row.Frozen_Money).toLocaleString()}</td>
-                      <td className="py-2 text-[#1d1d1f]">{row.Status ?? '-'}</td>
-                      <td className="py-2">
-                        {(row as { investor_alert?: boolean }).investor_alert ? (
-                          <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900">투자자 모드 가동 필요</span>
-                        ) : (
-                          <span className="text-[#86868b]">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {inventoryFrozenMoney.items.map((row, i) => {
+                    const storeName = row.Store_Name ?? '';
+                    const stripped = stripApplePrefix(storeName);
+                    const countryEn = storeNameToCountry.get(stripped) ?? storeNameToCountry.get(storeName.trim()) ?? '';
+                    const countryDisplay = countryEn ? formatCountryDisplay(countryEn) : '-';
+                    return (
+                      <tr
+                        key={i}
+                        className={`border-b border-gray-100 ${(row as { investor_alert?: boolean }).investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
+                      >
+                        <td className="py-2 text-[#1d1d1f]">{countryDisplay}</td>
+                        <td className="py-2 text-[#1d1d1f]">{storeName ? formatStoreDisplay(stripped) : '-'}</td>
+                        <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
+                        <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
+                        <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
+                        <td className="py-2 text-right font-medium text-[#1d1d1f]">${Number(row.Frozen_Money).toLocaleString()}</td>
+                        <td className="py-2 text-[#1d1d1f]">{row.Status ?? '-'}</td>
+                        <td className="py-2">
+                          {(row as { investor_alert?: boolean }).investor_alert ? (
+                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900">투자자 모드 가동 필요</span>
+                          ) : (
+                            <span className="text-[#86868b]">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

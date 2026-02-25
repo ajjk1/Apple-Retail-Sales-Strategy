@@ -1558,6 +1558,22 @@ export default function Home() {
                   : '클릭 시 추천 대시보드'}
               </p>
             </Link>
+            <Link
+              href="/investor"
+              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
+            >
+              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">투자자 대시보드</h3>
+              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
+              <p className="text-xs text-[#86868b] mt-1">동결 자금 · 엔진 성과 · 상태 알림 (dashboard_sales_data 기반)</p>
+            </Link>
+            <Link
+              href="/seller"
+              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
+            >
+              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">판매자 퀵 대시보드</h3>
+              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
+              <p className="text-xs text-[#86868b] mt-1">추천 상품·이유 두 줄 · 신호등 · 대안 보기 · 예상 기여 점수</p>
+            </Link>
           </section>
         ) : (
           <section className="bg-white rounded-2xl p-6 mb-6 shadow-sm border border-gray-100">
