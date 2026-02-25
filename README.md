@@ -285,3 +285,138 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 - **추천 대시보드**: 상점 목록 12초 타임아웃·재시도·에러 시 "다시 불러오기". 샘플/시뮬레이션 구간은 카드 테두리·뱃지·설명으로 구분.
 - **데이터 소스 표시**: 대시보드에서 "데이터: SQL · 예측: arima_model.joblib" 등 명시.
 - **실행**: `web-development/start.ps1` 실행 → 백엔드(8000) → 프론트(3000). 작업 이력은 **start.ps1 상단 주석**에 순서대로 기록됨.
+
+### 9.4 오늘 작업 정리 (수요·안전재고 대시보드, 배포 점검)
+
+- **가상환경 및 통합 점검**
+  - 프로젝트 루트에 `.venv` 가상환경 생성 후, `web-development/backend/requirements.txt` 기준으로 백엔드 의존성을 설치했습니다.
+  - `.\.venv\Scripts\python.exe web-development\backend\main.py --integration-check` 를 실행해 모델 서버 4개 모듈(수요·매출·안전재고·추천)과 데이터 로더 연동이 모두 정상임을 재확인했습니다.
+  - `.gitignore`에 `.venv/` 가 이미 포함되어 있어, 가상환경 자체는 Git 커밋·배포 대상에 포함되지 않습니다.
+
+- **수요 대시보드(예측 모델) 리팩토링·테스트 진입점**
+  - `model-server/03.prediction model/prediction model.py` 하단에 스모크 테스트 엔트리포인트를 추가했습니다.
+  - 사용법: `cd ajjk1` 후 `.\.venv\Scripts\python.exe "model-server\03.prediction model\prediction model.py"` 실행 시,  
+    ① 2020~2024년 총 판매 수량, ② 2025년 예측 수량(ARIMA 또는 선형 추세), ③ `get_demand_dashboard_data()` 기준 `total_demand`를 콘솔에 출력합니다.
+  - FastAPI 서버에서는 이 모듈을 **import만** 하므로, `if __name__ == "__main__":` 블록은 서버·HF Space 실행 시에는 동작하지 않고, 로컬 점검용으로만 사용됩니다.
+
+- **안전재고 대시보드 UI 단순화 (Inventory Action Center)**
+  - `web-development/frontend/app/page.tsx` 내 **안전재고 오버레이**에서 상단 KPI 카드 4개를 제거했습니다.  
+    (총 잠긴 돈 / 예상 매출 / 과잉 품목 수 / 위험 품목 수)
+  - 동일 오버레이 하단의 **매장별 재고 막대 그래프 카드**도 제거하고, 관리자 코멘트 카드만 전체 폭(`lg:col-span-3`)으로 유지해 레이아웃을 간결하게 정리했습니다.
+  - `위험 품목 Top 5` 카드를 **과잉 재고 현황 카드와 유사한 라이트 테마**(흰색 배경·연한 회색 테두리, 상단 설명 + 뱃지 구조)로 재디자인하여, 동일 섹션 내 카드 스타일을 통일했습니다.
+
+- **배포 영향 및 빌드 검증 (Vercel / Hugging Face)**
+  - 프론트엔드: `web-development/frontend` 에서 `npm run build`(Next.js 14 프로덕션 빌드)를 실행해 타입·린트·정적 페이지 생성까지 모두 통과했습니다.  
+    → Vercel에서 사용하는 빌드 파이프라인과 동일 수준으로 검증 완료.
+  - 백엔드/HF Space: 오늘 변경된 코드는 prediction 모듈의 `__main__` 블록과 프론트 UI(`page.tsx`) 뿐이라,  
+    기존 Hugging Face Space 워크플로(`.github/workflows/sync_to_hf.yml`)와 FastAPI 라우트 구조에는 영향이 없습니다.
+  - 커밋 이력:
+    - `chore: add prediction model smoke test entrypoint`
+    - `style: simplify safety stock dashboard cards`
+
+---
+
+## 10. 기술 스택 및 구성 요소 명세
+
+### 10.1 프론트엔드 (대시보드 UI)
+
+- **프레임워크**
+  - **Next.js 14 (`next@14.2.24`)**: App Router 기반, `app/` 디렉터리 구조.
+  - **React 18 (`react@18.3.1`)**: 함수형 컴포넌트 + 훅 기반 상태 관리.
+  - **TypeScript 5 (`typescript@^5`)**: 타입 안전성 확보 및 IDE 지원.
+- **스타일링·레이아웃**
+  - **Tailwind CSS 3 (`tailwindcss@3.4.1`)**: 유틸리티 클래스 기반 스타일링, 반응형 레이아웃 구현.
+  - 기본 폰트·색은 Apple 스타일에 맞춰 커스텀(`text-[#1d1d1f]`, `#f5f5f7` 등).
+- **차트·시각화**
+  - **Recharts (`recharts@^3.7.0`)**: 막대/파이/콤포지트 차트, 안전재고·매출·수요 대시보드의 대부분 그래프에 사용.
+  - **three / react-globe.gl**: 3D 지구본 기반 매장·지역 데이터 시각화에 사용.
+- **품질 관리**
+  - **ESLint 8 + `eslint-config-next`**: Next.js 권장 규칙 기반 린트, `npm run lint`.
+  - **Type Checking**: `next build` 과정에서 TypeScript 타입 체크 자동 수행.
+- **주요 명령**
+  - 개발 서버: `cd web-development/frontend && npm install && npm run dev`
+  - 프로덕션 빌드: `cd web-development/frontend && npm run build`
+
+### 10.2 백엔드 API (FastAPI)
+
+- **런타임 / 서버**
+  - **Python (프로젝트 기준 3.13 호환)**: 가상환경 `.venv` 에서 동작.
+  - **FastAPI (`fastapi>=0.109.0`)**: REST API 서버, `/api/*` 엔드포인트 정의 (`web-development/backend/main.py`).
+  - **Uvicorn (`uvicorn[standard]>=0.27.0`)**: ASGI 서버, 로컬 실행 시 `uvicorn main:app --reload`.
+- **의존성 / 데이터 처리**
+  - **pandas (`pandas>=2.0.0`)**: SQL/CSV → DataFrame 로딩, 집계·피벗·시계열 처리 전반.
+  - **joblib (`joblib>=1.3.0`)**: ARIMA 모델(`arima_model.joblib`) 로딩, 모델 캐싱.
+  - **numpy**: 모델 서버 모듈(예측·재고·추천) 내부에서 수치 연산에 사용.
+  - **scikit-learn**: 추천/시계열 모듈에서 `cosine_similarity`, `TruncatedSVD`, `LinearRegression` 등 사용.
+- **구조**
+  - `web-development/backend/main.py`  
+    - `/api/sales-summary`, `/api/safety-stock`, `/api/store-recommendations/{store_id}` 등 API 라우트 정의.
+    - 각 라우트는 `model-server/` 하위 모듈(수요·매출·안전재고·추천)을 import 해서 호출만 담당.
+  - 공통 데이터 로더: `model-server/load_sales_data.py`  
+    - `01.data/*.sql` 및 `02.Database for dashboard/*.sql` 을 파싱해 `sales_data` 테이블을 DataFrame 으로 로드.
+    - 모든 분석/대시보드 모듈이 **동일한 DataFrame**을 사용하도록 통일.
+
+### 10.3 모델 서버 / 분석 모듈
+
+- **수요 예측·수요 대시보드**
+  - 모듈: `model-server/03.prediction model/prediction model.py`
+  - 기능:
+    - `get_sales_quantity_forecast()` — 2020~2024 실적 + 2025년 수량 예측 (ARIMA → 실패 시 선형 추세 폴백).
+    - `get_demand_dashboard_data()` — 대륙/국가/스토어/도시·연도별 수요 대시보드 통합 데이터.
+    - `get_predicted_demand_by_product`, `get_predicted_demand_by_category` — 2025년 예상 수요 테이블용 데이터.
+  - 모델:
+    - `arima_model.joblib` (statsmodels ARIMA 결과 객체) 를 `joblib.load()` 로 로딩.
+    - 모델 파일이 없거나 실패 시, 선형 회귀 기반 폴백 로직 사용.
+
+- **매출 분석·매출 대시보드**
+  - 모듈: `model-server/04.Sales analysis/Sales analysis.py`
+  - 기능:
+    - `get_store_sales_summary()`, `get_sales_box_value()` — 메인·매출 대시보드 요약.
+    - `get_sales_by_store`, `get_sales_by_store_by_year`, `get_sales_by_store_quarterly*` — 매장·분기·카테고리별 매출 차트용 데이터.
+    - `get_store_performance_grade()` — 매장 등급/달성률 분석(예측 매출과 목표 대비).
+
+- **안전재고 최적화·Inventory Action Center**
+  - 모듈: `model-server/05.Inventory Optimization/Inventory Optimization.py`
+  - 기능:
+    - `run_inventory_pipeline()` — 안전재고(Safety_Stock), Inventory, Status(Danger/Normal/Overstock), Frozen_Money 계산.
+    - `get_safety_stock_summary()`, `get_kpi_summary()`, `get_inventory_list()` — 안전재고 대시보드 상단 요약·리스트.
+    - `get_overstock_status_by_region()`, `get_overstock_top5_by_quantity()`, `get_risky_items_top5()` — 과잉 재고·위험 품목 분석 카드용 데이터.
+    - `get_demand_forecast_chart_data()` — ARIMA 기반 6분기 수요·재고 예측 차트 데이터.
+
+- **추천 시스템·성장 전략 대시보드**
+  - 모듈: `model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py`
+  - 기능:
+    - `get_recommendation_summary()`, `get_store_list()` — 추천 대시보드 메인 요약·상점 목록.
+    - 4대 추천 엔진: `association_recommendations`, `similar_store_recommendations`, `latent_demand_recommendations`, `trend_recommendations`.
+    - `get_store_recommendations()` — 상점별 추천 결과 통합.
+    - `StoreGrowthStrategyEngine` / `get_store_growth_strategy_recommendations()` — 상점별 성장 전략 엔진 (브랜드/이익/재고 회전 가중치 기반).
+    - 퍼널·성과 시뮬레이터: `get_customer_journey_funnel()`, `get_funnel_stage_weight()`, `get_performance_simulator()`.
+
+### 10.4 인프라 / 배포 파이프라인
+
+- **프론트엔드 (Vercel)**
+  - 설정 파일: `web-development/frontend/vercel.json`
+  - 빌드:
+    - `"framework": "nextjs"`
+    - `"buildCommand": "npm run build"`, `"installCommand": "npm install"`
+  - API 연동:
+    - rewrites: `/api/*`, `/docs/*`, `/openapi.json` → Hugging Face Space 백엔드로 프록시.
+
+- **백엔드 (Hugging Face Space)**
+  - Sync 워크플로: `.github/workflows/sync_to_hf.yml`
+    - `main` 브랜치 푸시 시, Hugging Face Space `apple-retail-study/Apple-Retail-Sales-Strategy` 로 Git force-push.
+    - 대용량/불필요 폴더(`model-server/00.old` 등)는 푸시 전 제거.
+  - 실행 환경:
+    - Space 내 `web-development/backend/main.py` 를 FastAPI 앱 엔트리포인트로 사용.
+    - 모델 서버(`model-server/`)와 동일 디렉터리 구조를 유지해야 함.
+
+- **환경 변수 / 기타**
+  - 로컬 개발:
+    - `web-development/frontend/.env.local` 에
+      - `BACKEND_URL=http://127.0.0.1:8000`
+      - `NEXT_PUBLIC_API_URL=http://127.0.0.1:8000`
+  - 프로덕션(Vercel):
+    - `BACKEND_URL`, `NEXT_PUBLIC_API_URL` 을 Hugging Face Space URL로 설정.
+  - Git:
+    - 기본 브랜치: `main`
+    - Hugging Face 토큰: GitHub Secrets `HF_TOKEN` 에 저장, 워크플로에서만 사용.
