@@ -27,10 +27,16 @@ interface GrowthStrategy {
   fallback_used?: boolean;
 }
 
+interface AssociationItem {
+  product_name?: string;
+  reason?: string;
+}
+
 interface StoreRecommendationsResponse {
   store_id: string;
   store_summary?: { total_sales?: number; product_count?: number; store_name?: string };
   growth_strategy?: GrowthStrategy;
+  association?: AssociationItem[];
 }
 
 interface InventoryItem {
@@ -104,6 +110,29 @@ export default function SellerQuickDashboardPage() {
   const contributionBase = current?.score != null ? Math.round(current.score * 100) : (list.length - recIndex) * 25;
   const expectedScore = contributionBase + soldCount * 10;
   const contributionPct = totalSales > 0 && current?.score != null ? Math.min(100, Math.round((current.score / 1) * 15)) : null;
+
+  // 오늘의 추천 멘트: 재고 < 안전재고 → 품절 임박, association 있음 → 함께 사는 아이템, 아니면 오늘의 추천. 초간단 태그만 사용.
+  const { mentText, mentTag, copyText } = useMemo(() => {
+    const hasAssociation = (rec?.association?.length ?? 0) > 0;
+    const isLowStock = current != null && signal === 'red';
+    let text: string;
+    let tag: string;
+    if (isLowStock) {
+      text = '품절 임박';
+      tag = '마감 임박';
+    } else if (hasAssociation) {
+      text = '함께 사는 아이템';
+      tag = '가성비 추천';
+    } else {
+      text = '오늘의 추천';
+      tag = '신뢰 강조';
+    }
+    return { mentText: text, mentTag: tag, copyText: `${text} [${tag}]` };
+  }, [rec?.association?.length, current, signal]);
+
+  const handleCopyMent = () => {
+    navigator.clipboard.writeText(copyText).catch(() => {});
+  };
 
   if (loading && !rec) {
     return (
@@ -215,6 +244,23 @@ export default function SellerQuickDashboardPage() {
                 이 상품을 팔 때마다 예상 기여 점수가 올라갑니다.
               </p>
             </section>
+
+            {/* 오늘의 추천 멘트: association → 함께 사는 아이템, 재고 < 안전재고 → 품절 임박, 문구 복사 버튼 */}
+            <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mt-6">
+              <h2 className="text-sm font-medium text-[#86868b] mb-3">오늘의 추천 멘트</h2>
+              <p className="text-lg font-semibold text-[#1d1d1f] mb-2">{mentText}</p>
+              <p className="text-sm text-[#6e6e73] mb-4">
+                <span className="inline-block px-2 py-1 rounded-md bg-[#f5f5f7] text-[#1d1d1f] font-medium">[{mentTag}]</span>
+              </p>
+              <button
+                type="button"
+                onClick={handleCopyMent}
+                className="w-full py-3 rounded-xl bg-[#0071e3] text-white font-semibold hover:opacity-90 transition-opacity"
+              >
+                문구 복사하기
+              </button>
+              <p className="text-xs text-[#86868b] mt-2 text-center">복사한 문구를 메시지로 손님에게 보내보세요.</p>
+            </section>
           </>
         ) : (
           <div className="bg-white rounded-2xl border border-gray-200 p-8 text-center">
@@ -223,6 +269,24 @@ export default function SellerQuickDashboardPage() {
               추천 대시보드로 이동 →
             </Link>
           </div>
+        )}
+
+        {/* 추천 데이터 있을 때 하단에도 오늘의 추천 멘트 노출 (현재 상품 없어도 association/재고 기반 문구 표시) */}
+        {rec && !current && (rec?.association?.length ?? 0) > 0 && (
+          <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mt-6">
+            <h2 className="text-sm font-medium text-[#86868b] mb-3">오늘의 추천 멘트</h2>
+            <p className="text-lg font-semibold text-[#1d1d1f] mb-2">함께 사는 아이템</p>
+            <p className="text-sm text-[#6e6e73] mb-4">
+              <span className="inline-block px-2 py-1 rounded-md bg-[#f5f5f7] text-[#1d1d1f] font-medium">[가성비 추천]</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText('함께 사는 아이템 [가성비 추천]').catch(() => {})}
+              className="w-full py-3 rounded-xl bg-[#0071e3] text-white font-semibold hover:opacity-90 transition-opacity"
+            >
+              문구 복사하기
+            </button>
+          </section>
         )}
       </div>
     </main>
