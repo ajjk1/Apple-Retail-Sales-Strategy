@@ -497,6 +497,10 @@ export default function Home() {
   const [overstockStatusByRegion, setOverstockStatusByRegion] = useState<
     { continent: string; country: string; store_name: string; overstock_qty: number; frozen_money: number; category: string }[]
   >([]);
+  /** 과잉 재고 현황 차트 필터: 대륙·국가·상점별 */
+  const [overstockFilterContinent, setOverstockFilterContinent] = useState<string>('');
+  const [overstockFilterCountry, setOverstockFilterCountry] = useState<string>('');
+  const [overstockFilterStore, setOverstockFilterStore] = useState<string>('');
   /** 과잉 재고 TOP 5 (수량 기준): 상품별 현재/목표 재고, 과잉 수량·비율·절감 가능 금액 */
   const [overstockTop5ByQty, setOverstockTop5ByQty] = useState<
     { product_name: string; current_inventory: number; target_inventory: number; overstock_qty: number; overstock_pct: number; savings_amount: number }[]
@@ -533,10 +537,37 @@ export default function Home() {
         .slice(0, 5),
     [safetyStockInventoryList],
   );
-  /** 과잉 재고 현황 차트용: 대륙·국가·상점 구분·카테고리 순 우선, 없으면 기존 Top5 폴백 */
+  /** 과잉 재고 현황 필터 옵션: 대륙 목록 (전체 데이터 기준) */
+  const overstockContinents = useMemo(() => {
+    const set = new Set(overstockStatusByRegion.map((r) => (r.continent ?? '').trim()).filter(Boolean));
+    return Array.from(set).sort();
+  }, [overstockStatusByRegion]);
+  /** 과잉 재고 현황 필터 옵션: 선택 대륙 내 국가 목록 */
+  const overstockCountries = useMemo(() => {
+    let list = overstockStatusByRegion;
+    if (overstockFilterContinent) {
+      list = list.filter((r) => (r.continent ?? '').trim() === overstockFilterContinent);
+    }
+    const set = new Set(list.map((r) => (r.country ?? '').trim()).filter(Boolean));
+    return Array.from(set).sort();
+  }, [overstockStatusByRegion, overstockFilterContinent]);
+  /** 과잉 재고 현황 필터 옵션: 선택 국가 내 상점 목록 */
+  const overstockStores = useMemo(() => {
+    let list = overstockStatusByRegion;
+    if (overstockFilterContinent) list = list.filter((r) => (r.continent ?? '').trim() === overstockFilterContinent);
+    if (overstockFilterCountry) list = list.filter((r) => (r.country ?? '').trim() === overstockFilterCountry);
+    const set = new Set(list.map((r) => (r.store_name ?? '').trim()).filter(Boolean));
+    return Array.from(set).sort();
+  }, [overstockStatusByRegion, overstockFilterContinent, overstockFilterCountry]);
+
+  /** 과잉 재고 현황 차트용: 필터 적용 후 대륙·국가·상점 구분, 최대 12개 */
   const overstockChartData = useMemo(() => {
     if (overstockStatusByRegion.length > 0) {
-      return overstockStatusByRegion.slice(0, 12).map((row) => ({
+      let list = overstockStatusByRegion;
+      if (overstockFilterContinent) list = list.filter((r) => (r.continent ?? '').trim() === overstockFilterContinent);
+      if (overstockFilterCountry) list = list.filter((r) => (r.country ?? '').trim() === overstockFilterCountry);
+      if (overstockFilterStore) list = list.filter((r) => (r.store_name ?? '').trim() === overstockFilterStore);
+      return list.slice(0, 12).map((row) => ({
         name: [row.continent, row.country, stripApplePrefix((row.store_name ?? '').trim() || '—')].join(' / '),
         shortName: stripApplePrefix((row.store_name ?? '').trim()) || '—',
         store_name: (row.store_name ?? '').trim(),
@@ -546,7 +577,7 @@ export default function Home() {
       }));
     }
     return (overstockTop5Fallback ?? []).map((r) => ({ ...r, shortName: r.name, category: '' }));
-  }, [overstockStatusByRegion, overstockTop5Fallback]);
+  }, [overstockStatusByRegion, overstockTop5Fallback, overstockFilterContinent, overstockFilterCountry, overstockFilterStore]);
   const dangerTop5 = useMemo(
     () =>
       (safetyStockInventoryList ?? [])
@@ -1816,14 +1847,63 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 과잉 재고 현황 & 관리자 코멘트: 대륙·국가·상점 구분, 카테고리별 순 */}
-                  {overstockChartData.length > 0 && (
-                    <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 과잉 재고 현황: 대륙·국가·상점 필터 */}
+                  {overstockStatusByRegion.length > 0 && (
+                    <div className="mb-6">
                       <div className="rounded-xl border border-gray-200 bg-white p-4">
-                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">과잉 재고 현황</h3>
-                        <p className="text-xs text-[#86868b] mb-3">
-                          대륙별·국가별·상점별 구분, 카테고리별 순으로 Frozen Money(₩)와 과잉 재고 수량(대)을 표시합니다.
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-[#1d1d1f]">과잉 재고 현황</h3>
+                            <p className="text-xs text-[#86868b] mt-0.5">
+                              대륙별·국가별·상점별 구분, 카테고리별 순으로 Frozen Money(₩)와 과잉 재고 수량(대)을 표시합니다.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label className="text-xs text-[#6e6e73] shrink-0">대륙별</label>
+                            <select
+                              value={overstockFilterContinent}
+                              onChange={(e) => {
+                                setOverstockFilterContinent(e.target.value);
+                                setOverstockFilterCountry('');
+                                setOverstockFilterStore('');
+                              }}
+                              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] min-w-[100px]"
+                            >
+                              <option value="">전체</option>
+                              {overstockContinents.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                            <label className="text-xs text-[#6e6e73] shrink-0 ml-1">국가별</label>
+                            <select
+                              value={overstockFilterCountry}
+                              onChange={(e) => {
+                                setOverstockFilterCountry(e.target.value);
+                                setOverstockFilterStore('');
+                              }}
+                              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] min-w-[100px]"
+                            >
+                              <option value="">전체</option>
+                              {overstockCountries.map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                            <label className="text-xs text-[#6e6e73] shrink-0 ml-1">상점별</label>
+                            <select
+                              value={overstockFilterStore}
+                              onChange={(e) => setOverstockFilterStore(e.target.value)}
+                              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] min-w-[120px]"
+                            >
+                              <option value="">전체</option>
+                              {overstockStores.map((s) => (
+                                <option key={s} value={s}>{stripApplePrefix(s) || s}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        {overstockChartData.length === 0 ? (
+                          <p className="text-xs text-[#86868b] py-8 text-center">선택한 조건에 맞는 데이터가 없습니다.</p>
+                        ) : (
                         <div className="w-full h-64">
                           <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={overstockChartData} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
@@ -1893,17 +1973,7 @@ export default function Home() {
                             </ComposedChart>
                           </ResponsiveContainer>
                         </div>
-                      </div>
-                      <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
-                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-2">과잉재고 관리자 코멘트</h3>
-                        <p className="text-xs text-[#86868b] mb-3">
-                          과잉 재고 상위 매장에 대한 프로모션·이동 계획을 간단히 메모해 두는 영역입니다.
-                        </p>
-                        <div className="text-xs text-[#1d1d1f] bg-[#f5f5f7] border border-gray-200 rounded-lg p-3 leading-relaxed">
-                          <p className="font-medium mb-1">예시 코멘트</p>
-                          <p className="mb-1">- 주말 20% 플래시 세일 진행 예정</p>
-                          <p>- 재고가 부족한 명동점으로 50개 이동 지시</p>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
