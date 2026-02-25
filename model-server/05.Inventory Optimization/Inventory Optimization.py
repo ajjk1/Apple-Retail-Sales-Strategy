@@ -591,6 +591,12 @@ def get_risky_items_top5():
     if not all(c in df.columns for c in need):
         return []
 
+    # 위험 품목만 대상: Status == 'Danger' 인 행 기준으로 집계
+    if "Status" in df.columns:
+        df = df[df["Status"] == "Danger"].copy()
+        if df.empty:
+            return []
+
     inv = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0)
     safety = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0)
     df = df.copy()
