@@ -567,14 +567,18 @@ export default function Home() {
       if (overstockFilterContinent) list = list.filter((r) => (r.continent ?? '').trim() === overstockFilterContinent);
       if (overstockFilterCountry) list = list.filter((r) => (r.country ?? '').trim() === overstockFilterCountry);
       if (overstockFilterStore) list = list.filter((r) => (r.store_name ?? '').trim() === overstockFilterStore);
-      return list.slice(0, 12).map((row) => ({
-        name: [row.continent, row.country, stripApplePrefix((row.store_name ?? '').trim() || '—')].join(' / '),
-        shortName: stripApplePrefix((row.store_name ?? '').trim()) || '—',
-        store_name: (row.store_name ?? '').trim(),
-        overstock_qty: row.overstock_qty,
-        frozen: row.frozen_money,
-        category: row.category || '',
-      }));
+      return list.slice(0, 12).map((row) => {
+        const storeDisplay = stripApplePrefix((row.store_name ?? '').trim()) || '—';
+        return {
+          name: storeDisplay,
+          fullLabel: [row.continent, row.country, storeDisplay].join(' / '),
+          shortName: storeDisplay,
+          store_name: (row.store_name ?? '').trim(),
+          overstock_qty: row.overstock_qty,
+          frozen: row.frozen_money,
+          category: row.category || '',
+        };
+      });
     }
     return (overstockTop5Fallback ?? []).map((r) => ({ ...r, shortName: r.name, category: '' }));
   }, [overstockStatusByRegion, overstockTop5Fallback, overstockFilterContinent, overstockFilterCountry, overstockFilterStore]);
@@ -1912,9 +1916,9 @@ export default function Home() {
                                 dataKey="name"
                                 tick={{ fontSize: 10 }}
                                 interval={0}
-                                angle={overstockChartData[0]?.name?.includes(' / ') ? -12 : 0}
-                                textAnchor={overstockChartData[0]?.name?.includes(' / ') ? 'end' : 'middle'}
-                                tickFormatter={(v: string) => (v && v.length > 14 ? `${v.slice(0, 14)}…` : v)}
+                                angle={-12}
+                                textAnchor="end"
+                                tickFormatter={(v: string) => (v && v.length > 10 ? `${v.slice(0, 10)}…` : v)}
                               />
                               <YAxis
                                 yAxisId="left"
@@ -1940,7 +1944,8 @@ export default function Home() {
                                   return [value, name];
                                 }}
                                 labelFormatter={(label, payload) => {
-                                  const p = payload?.[0]?.payload;
+                                  const p = payload?.[0]?.payload as { fullLabel?: string; category?: string } | undefined;
+                                  if (p?.fullLabel) return p.category ? `${p.fullLabel} [${p.category}]` : p.fullLabel;
                                   if (p?.category) return `${label} [${p.category}]`;
                                   return label;
                                 }}

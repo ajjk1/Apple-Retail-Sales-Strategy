@@ -186,11 +186,12 @@ def run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
         how="left",
     )
 
-    # [Step 2–3] 재고 수준 생성 및 과잉 재고 타겟
+    # [Step 2–3] 재고 수준 생성 및 과잉 재고 타겟 (상품별 100%~320% 난수 배수 → 과잉 수량 % 다양화)
     np.random.seed(42)
     df["Inventory"] = (
         df["Safety_Stock"] + df["quantity"] + np.random.randint(0, 5, size=len(df))
     )
+    # 상품별 과잉 배수: 100%(1.0) ~ 320%(3.2) 구간 난수, 소수점 둘째 자리
     target_products = [
         "MacBook Pro 16-inch",
         "Mac Studio",
@@ -198,8 +199,25 @@ def run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
         "iPad Pro 12.9-inch",
         "iMac 24-inch",
     ]
-    mask_over = df["Product_Name"].isin(target_products)
-    df.loc[mask_over, "Inventory"] = df.loc[mask_over, "Safety_Stock"] * 4
+    np.random.seed(123)
+    overstock_multipliers = {
+        p: round(float(np.random.uniform(1.0, 3.2)), 2)
+        for p in target_products
+    }
+    for product_name, mult in overstock_multipliers.items():
+        mask = df["Product_Name"] == product_name
+        df.loc[mask, "Inventory"] = (df.loc[mask, "Safety_Stock"] * mult).round(0).astype(int)
+
+    # [Step 2.5] 위험 품목 비율 확보: 전체의 최소 약 3%는 현재 재고 < 안전 재고 (Danger)
+    np.random.seed(77)
+    n = len(df)
+    danger_ratio = max(0.03, min(0.10, 0.03))  # 최소 3% 이상, 최대 10%
+    n_danger = max(1, int(round(n * danger_ratio)))
+    danger_idx = df.sample(n=min(n_danger, n), random_state=77).index
+    safety = pd.to_numeric(df.loc[danger_idx, "Safety_Stock"], errors="coerce").fillna(1)
+    # 현재 재고를 안전 재고의 30%~95% 사이로 설정해 위험 상태로 만듦
+    factor = np.random.uniform(0.30, 0.95, size=len(danger_idx))
+    df.loc[danger_idx, "Inventory"] = (safety * factor).clip(lower=0).astype(int)
 
     # [Step 4] Status, Frozen_Money
     conditions = [
