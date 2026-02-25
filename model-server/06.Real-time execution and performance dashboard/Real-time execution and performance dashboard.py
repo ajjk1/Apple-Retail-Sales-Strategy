@@ -1134,33 +1134,613 @@ def get_sales_forecast_chart_data(store_id: str, forecast_days: int = 30) -> Dic
     return predict_sales(store_id, forecast_days=forecast_days)
 
 
-def get_store_recommendations(store_id: str) -> Dict[str, Any]:
+# ============================================================================
+# 상점별 성장 전략 엔진 — "실수하지 않으면서도 돈을 버는 로직"
+# CTO 원칙: if 문 하나하나가 비즈니스 리스크를 막는 방패. 정교한 구현 필수.
+# 데이터 연동: model-server/02.Database for dashboard/dashboard_sales_data.sql (sales_data)
+# ============================================================================
+
+REQUIRED_PRODUCT_KEYS = ("price", "margin", "stock_age", "compatibility_tags")
+STORE_TYPES = ("PREMIUM", "OUTLET", "STANDARD")
+
+# ---------- 상점별 맞춤형 모드 (Dynamic Weighting): 매장 위치·성격에 따라 엔진의 '성격' 변경 ----------
+# 상점 타입 -> (엔진의 상태 Internal State, (CEO, INV, OPS) 가중치)
+DYNAMIC_WEIGHTING: Dict[str, tuple] = {
+    "PREMIUM": ("브랜드 이미지가 최우선이야", (0.6, 0.2, 0.2)),
+    "OUTLET": ("무조건 재고를 비워야 해", (0.1, 0.7, 0.2)),
+    "STANDARD": ("골고루 잘 팔아보자", (0.3, 0.4, 0.3)),
+}
+
+# [방패] 브랜드 리스크: 고가 기기에 극저가 추천 시 브랜드 격 하락 → CEO 감점
+CEO_PREMIUM_DEVICE_THRESHOLD = 1000.0
+CEO_LOW_ITEM_PRICE_THRESHOLD = 10.0
+CEO_PENALTY_RATIO = 0.2
+
+# [방패] 자산 리스크: 재고 장기 체류 시 자금 유동성 저하 → 재고 회전 유도 가산
+INVESTOR_AGED_STOCK_DAYS = 90
+INVESTOR_AGED_BOOST = 1.5
+INVESTOR_AGED_CAP = 1.5
+
+# [방패] 운영 리스크: 호환 불일치 추천 시 반품·클레임 → COO 1순위 제외
+COO_REJECT_MESSAGE = "이건 끼워 팔면 반품이야. 리스트에서 당장 빼!"
+
+# [방패] 수치 안정성: 스코어 계산 시 0 나눗셈·비정상값 방지
+CEO_PRICE_NORM_DIVISOR = 1500.0
+OPERATION_AGE_NORM_DAYS = 180.0
+SCORE_MIN, SCORE_MAX = 0.0, 1.0
+MARGIN_MIN, MARGIN_MAX = 0.0, 1.0
+
+# [방패] 실패 시 손실 최소화: Fallback으로 항상 유효 응답 보장
+GROWTH_STRATEGY_FALLBACK_ITEMS = [
+    {"product_id": "FB-1", "product_name": "AppleCare+", "reason": "Fallback: 기본 추천 1", "score": 0.9},
+    {"product_id": "FB-2", "product_name": "USB-C 어댑터", "reason": "Fallback: 기본 추천 2", "score": 0.85},
+    {"product_id": "FB-3", "product_name": "MagSafe 충전기", "reason": "Fallback: 기본 추천 3", "score": 0.8},
+]
+
+
+class StoreGrowthStrategyEngine:
     """
-    특정 store_id에 대한 4가지 추천 모델 결과 반환.
+    이익·브랜드·운영 황금비율 계산기.
+    각 if는 비즈니스 리스크 방패: 잘못된 추천(재고 없음/호환 불일치/브랜드 훼손)을 막고,
+    돈을 버는 방향(재고 회전·마진·브랜드 일관성)만 스코어에 반영.
+    """
+
+    def __init__(self, store_id: str, store_type: str = "STANDARD"):
+        self.store_id = str(store_id).strip() if store_id else ""
+        # [방패] 잘못된 store_type 전달 시 기본값으로 수렴 → 예기치 않은 가중치 방지
+        if store_type not in STORE_TYPES:
+            self.store_type = "STANDARD"
+        else:
+            self.store_type = store_type
+
+    # ---------- Data Schema: [방패] 잘못된 데이터가 스코어링/필터에 들어가는 것 방지 ----------
+    def _validate_schema(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        리스크: 스키마 불일치 데이터가 들어가면 점수 왜곡·런타임 오류.
+        방패: 필수 키 존재·타입 검사 후, 복사본만 반환(원본 불변).
+        """
+        if not isinstance(products, (list, tuple)):
+            return []
+        valid: List[Dict[str, Any]] = []
+        for p in products:
+            # [방패] dict가 아니면 스코어링 시 KeyError/AttributeError 방지
+            if not isinstance(p, dict):
+                continue
+            # [방패] price 없음/None → 가격 기반 로직(CEO) 오동작 방지
+            if "price" not in p or p.get("price") is None:
+                continue
+            # [방패] margin 없음/None → 이익(Investor) 점수 산출 불가 방지
+            if "margin" not in p or p.get("margin") is None:
+                continue
+            # [방패] stock_age 없음/None → 재고 회전(Operation) 로직 오동작 방지
+            if "stock_age" not in p or p.get("stock_age") is None:
+                continue
+            tags = p.get("compatibility_tags")
+            # [방패] compatibility_tags가 list/tuple이 아니면 호환성 필터 오류 방지
+            if not isinstance(tags, (list, tuple)):
+                p = {**p, "compatibility_tags": []}
+            else:
+                p = {**p}
+            valid.append(p)
+        return valid
+
+    # ---------- 1. Filter Layer: [방패] "팔 수 없는 것" 추천 → 고객 불만·신뢰 하락 ----------
+    def _filter_cannot_sell(self, products: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        리스크: 재고 0이고 입고 예정도 없는 상품을 추천하면 이행 불가·불만·이미지 훼손.
+        방패: 재고 > 0 이거나 expected_eta 가 있으면 통과; 그 외는 무조건 제외.
+        """
+        if not products:
+            return []
+        out: List[Dict[str, Any]] = []
+        for p in products:
+            stock = p.get("stock")
+            # [방패] 재고가 있으면 즉시 통과(숫자 변환 실패 시 아래 ETA로만 판단)
+            if stock is not None:
+                try:
+                    s_val = int(stock)
+                    if s_val > 0:
+                        out.append(p)
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            # [방패] 재고 0이어도 입고 예정이 있으면 추천 가능(이행 가능성)
+            eta = p.get("expected_eta")
+            if eta is not None and str(eta).strip():
+                out.append(p)
+            # else: 재고 0이고 입고 예정 없음 → 추천 시 실수(이행 불가) → 제외
+        return out
+
+    def _charger_type_from_product(self, product: Dict[str, Any]) -> Optional[str]:
+        """
+        리스크: 충전/연결 타입 불일치 추천 시 반품·클레임.
+        방패: product_name·compatibility_tags에서 magsafe/usb-c/lightning 일관 추출.
+        """
+        tags = product.get("compatibility_tags")
+        if not isinstance(tags, (list, tuple)):
+            tags = []
+        name = (product.get("product_name") or product.get("product_id") or "").lower()
+        for t in tags:
+            t = str(t).lower()
+            if "magsafe" in t or "mag safe" in t:
+                return "magsafe"
+            if "usb-c" in t or "usbc" in t or "usb_c" in t:
+                return "usb-c"
+            if "lightning" in t:
+                return "lightning"
+        if "magsafe" in name or "mag safe" in name:
+            return "magsafe"
+        if "usb-c" in name or "usbc" in name or "usb c" in name:
+            return "usb-c"
+        if "lightning" in name:
+            return "lightning"
+        return None
+
+    # ---------- 1. Filter Layer: [방패] "팔면 안 되는 것" 추천 → 반품·클레임·브랜드 리스크 ----------
+    def _filter_should_not_sell(
+        self, products: List[Dict[str, Any]], target_compatibility_tags: List[str], target_charger_type: Optional[str] = None
+    ) -> tuple:
+        """
+        리스크: 호환 불일치·충전기 타입 불일치 추천 시 끼워 팔면 반품 확률 극대화.
+        방패: target과 1건이라도 겹치지 않으면 제외; 충전 타입이 명시된 경우 반드시 일치해야 통과.
+        """
+        out: List[Dict[str, Any]] = []
+        rejected_log: List[Dict[str, Any]] = []
+        target_set = {str(t).strip().lower() for t in (target_compatibility_tags or []) if t is not None and str(t).strip()}
+        # [방패] target_charger_type 정규화(대소문자·공백)
+        norm_charger = str(target_charger_type).strip().lower() if target_charger_type else None
+        if norm_charger and norm_charger not in ("magsafe", "usb-c", "lightning"):
+            norm_charger = None
+
+        for p in products:
+            pt = p.get("compatibility_tags") or []
+            pt_set = {str(t).strip().lower() for t in pt if t is not None and str(t).strip()}
+            # [방패] 호환 태그가 하나도 겹치지 않으면 추천 시 반품/불만 리스크 → 제외
+            if target_set and not (pt_set & target_set):
+                rejected_log.append({"product": p.get("product_name") or p.get("product_id"), "reason": COO_REJECT_MESSAGE})
+                continue
+            # [방패] 메인 기기 충전 타입이 정해졌을 때, 후보 충전 타입이 다르면 반품 유발 → 제외
+            if norm_charger:
+                prod_charger = self._charger_type_from_product(p)
+                if prod_charger is not None and prod_charger != norm_charger:
+                    rejected_log.append({"product": p.get("product_name") or p.get("product_id"), "reason": COO_REJECT_MESSAGE})
+                    continue
+            out.append(p)
+        return out, rejected_log
+
+    # ---------- 2. Scoring Layer: [방패] 비정상 수치로 점수 왜곡·NaN/Inf 방지 ----------
+    def _safe_float(self, value: Any, default: float = 0.0, low: Optional[float] = None, high: Optional[float] = None) -> float:
+        """리스크: str/None/NaN이 점수 계산에 들어가면 예외·Inf. 방패: float 변환 후 clamp."""
+        try:
+            if value is None:
+                return default
+            v = float(value)
+            if pd.isna(v) if hasattr(pd, "isna") else (v != v):
+                return default
+            if low is not None and v < low:
+                v = low
+            if high is not None and v > high:
+                v = high
+            return v
+        except (TypeError, ValueError):
+            return default
+
+    def _score_ceo_raw(self, product: Dict[str, Any]) -> float:
+        """
+        CEO(브랜드) 원점수 0~1.
+        리스크: 음수/과대 가격·마진으로 점수 폭주. 방패: clamp 후 정규화.
+        """
+        price = self._safe_float(product.get("price"), 0.0, 0.0, None)
+        margin = self._safe_float(product.get("margin"), 0.0, MARGIN_MIN, MARGIN_MAX)
+        if CEO_PRICE_NORM_DIVISOR <= 0:
+            price_score = 0.5
+        else:
+            price_score = min(SCORE_MAX, price / CEO_PRICE_NORM_DIVISOR) if price else 0.5
+        raw = 0.5 * price_score + 0.5 * margin
+        return round(max(SCORE_MIN, min(SCORE_MAX, raw)), 4)
+
+    def _score_investor_raw(self, product: Dict[str, Any]) -> float:
+        """
+        Investor(이익) 원점수 0~1.
+        리스크: 마진 > 1 또는 음수로 가산 로직 오류. 방패: 0~1 clamp.
+        """
+        margin = self._safe_float(product.get("margin"), 0.0, MARGIN_MIN, MARGIN_MAX)
+        return round(margin, 4)
+
+    def _score_operation_raw(self, product: Dict[str, Any]) -> float:
+        """
+        Operation(재고 회전) 원점수 0~1.
+        리스크: 음수 재고령·0 나눗셈. 방패: age>=0, divisor>0 보장.
+        """
+        age = int(self._safe_float(product.get("stock_age"), 0.0, 0.0, None))
+        if OPERATION_AGE_NORM_DAYS <= 0:
+            return 0.0
+        norm = min(SCORE_MAX, age / OPERATION_AGE_NORM_DAYS)
+        return round(max(SCORE_MIN, norm), 4)
+
+    def _get_weights(self) -> tuple:
+        """
+        상점별 맞춤형 모드(Dynamic Weighting): CTO 명세 고정 가중치.
+        PREMIUM=브랜드 최우선(CEO 0.6), OUTLET=재고 비우기(INV 0.7), STANDARD=골고루(0.3/0.4/0.3).
+        리스크: 합이 1이 아니면 점수 스케일 붕괴. 방패: 명세값 사용, 미정의 시 STANDARD.
+        """
+        entry = DYNAMIC_WEIGHTING.get(self.store_type, DYNAMIC_WEIGHTING["STANDARD"])
+        _, (w_ceo, w_inv, w_op) = entry
+        s = w_ceo + w_inv + w_op
+        if s <= 0:
+            w_ceo, w_inv, w_op = 0.3, 0.4, 0.3
+        else:
+            w_ceo, w_inv, w_op = w_ceo / s, w_inv / s, w_op / s
+        return (round(w_ceo, 4), round(w_inv, 4), round(w_op, 4))
+
+    def _get_internal_state(self) -> str:
+        """엔진의 상태(Internal State): 매장 성격에 따른 엔진 성격 문구."""
+        entry = DYNAMIC_WEIGHTING.get(self.store_type, DYNAMIC_WEIGHTING["STANDARD"])
+        return entry[0]
+
+    def _get_weights_dict(self) -> Dict[str, float]:
+        """if 가중치 설정(Weights) 보고용: CEO, INV, OPS."""
+        w_ceo, w_inv, w_op = self._get_weights()
+        return {"CEO": w_ceo, "INV": w_inv, "OPS": w_op}
+
+    def _apply_technical_logic(
+        self,
+        product: Dict[str, Any],
+        ceo_raw: float,
+        inv_raw: float,
+        op_raw: float,
+        main_device_price: Optional[float],
+    ) -> tuple:
+        """
+        기술 로직: 각 if = 리스크 방패.
+        - Investor: 재고령>90일 → 자금 묶임 리스크 → 1.5배 가산으로 회전 유도(상한 1.5).
+        - CEO: 1000$ 기기+10$ 추천 → 브랜드 격 하락 리스크 → 80% 감점.
+        """
+        inv = max(SCORE_MIN, min(SCORE_MAX, inv_raw))
+        stock_age = int(self._safe_float(product.get("stock_age"), 0.0, 0.0, None))
+        # [방패] 재고 장기 체류 = 자금 유동성 리스크 → 점수 가산으로 우선 추천 유도
+        if stock_age > INVESTOR_AGED_STOCK_DAYS:
+            inv = min(INVESTOR_AGED_CAP, inv * INVESTOR_AGED_BOOST)
+
+        ceo = max(SCORE_MIN, min(SCORE_MAX, ceo_raw))
+        # [방패] 프리미엄 기기에 극저가 추천 = 브랜드 격 하락 리스크 → 감점
+        if main_device_price is not None and main_device_price >= CEO_PREMIUM_DEVICE_THRESHOLD:
+            cand_price = self._safe_float(product.get("price"), 0.0, 0.0, None)
+            if cand_price <= CEO_LOW_ITEM_PRICE_THRESHOLD:
+                ceo = ceo * CEO_PENALTY_RATIO
+
+        return (round(max(SCORE_MIN, min(SCORE_MAX, ceo)), 4), round(max(SCORE_MIN, min(INVESTOR_AGED_CAP, inv)), 4), op_raw)
+
+    # ---------- 3. Output Layer: [방패] 빈 문자열·None으로 대본/로그 오류 방지 ----------
+    def _build_reasoning_log(
+        self,
+        product: Dict[str, Any],
+        ceo: float,
+        inv: float,
+        op: float,
+        total: float,
+        path_steps: List[str],
+    ) -> Dict[str, Any]:
+        """보고용 JSON. 리스크: None/빈 값으로 프론트 오류. 방패: str()·기본문자열."""
+        reason_text = path_steps[0] if path_steps else "균형 점수에 의해 선정됨"
+        return {
+            "product_id": str(product.get("product_id") or product.get("product_name") or ""),
+            "product_name": str(product.get("product_name") or product.get("product_id") or ""),
+            "reason": f"이 아이템은 {reason_text}",
+            "if_then_path": list(path_steps) if path_steps else [],
+            "scores": {"ceo": ceo, "investor": inv, "operation": op, "total": total},
+            "store_type": self.store_type,
+        }
+
+    def _build_seller_script(self, product: Dict[str, Any], reason_text: str) -> str:
+        """판매자 대화 대본. 리스크: 상품명 없을 때 빈 문장. 방패: 기본 '이 제품'."""
+        name = product.get("product_name") or product.get("product_id") or "이 제품"
+        return f"'{name}'은(는) {reason_text}로 인해 현재 가장 적합한 추천입니다. 고객님께 이렇게 말씀해 보세요."
+
+    def run(
+        self,
+        products: List[Dict[str, Any]],
+        target_compatibility_tags: Optional[List[str]] = None,
+        target_charger_type: Optional[str] = None,
+        main_device_price: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        3단계 Pipeline. 순서 엄수: 스키마 검증 → 팔 수 없음 제거 → 팔면 안 됨 제거 → 스코어링 → 출력.
+        리스크: 필터 전에 스코어링하면 "팔면 안 되는" 상품이 추천될 수 있음. 방패: 반드시 Filter 후 Scoring.
+        """
+        target_tags = target_compatibility_tags if target_compatibility_tags is not None else []
+        try:
+            # [방패] 입력이 리스트가 아니면 조기 반환으로 하위 로직 오류 방지
+            if not isinstance(products, (list, tuple)):
+                return self._fallback_response("invalid_input: products must be a list")
+
+            valid = self._validate_schema(products)
+            if not valid:
+                return self._fallback_response("schema_invalid: 필수 필드(price,margin,stock_age,compatibility_tags) 누락")
+
+            # 1. Filter Layer — 순서 변경 금지: "팔 수 없는 것" 먼저, 그다음 "팔면 안 되는 것"
+            can_sell = self._filter_cannot_sell(valid)
+            filtered, rejected_log = self._filter_should_not_sell(can_sell, target_tags, target_charger_type)
+            if not filtered:
+                return self._fallback_response(
+                    "constraint_excluded_all: 팔 수 없거나 팔면 안 되는 항목만 있음(호환/충전기 타입 불일치 또는 재고·입고예정 없음)",
+                    rejected_log=rejected_log,
+                )
+
+            # 2. Scoring Layer — 필터 통과한 항목만 점수 산출(방패: 잘못된 항목 점수화 방지)
+            w_ceo, w_inv, w_op = self._get_weights()
+            scored: List[Dict[str, Any]] = []
+            for p in filtered:
+                ceo_r = self._score_ceo_raw(p)
+                inv_r = self._score_investor_raw(p)
+                op_r = self._score_operation_raw(p)
+                ceo, inv, op = self._apply_technical_logic(p, ceo_r, inv_r, op_r, main_device_price)
+                total = w_ceo * ceo + w_inv * inv + w_op * op
+                total = round(max(SCORE_MIN, min(SCORE_MAX * 2, total)), 4)  # [방패] 합이 1 초과할 수 있으므로 상한 여유
+
+                path_steps: List[str] = []
+                main_ok = main_device_price is not None and main_device_price >= CEO_PREMIUM_DEVICE_THRESHOLD
+                cand_price = self._safe_float(p.get("price"), 0.0, 0.0, None)
+                if main_ok and cand_price <= CEO_LOW_ITEM_PRICE_THRESHOLD:
+                    path_steps.append("브랜드 격이 떨어져. 점수를 80% 깎아. (1000$ 기기+10$ 추천)")
+                if int(self._safe_float(p.get("stock_age"), 0.0, 0.0, None)) > INVESTOR_AGED_STOCK_DAYS:
+                    path_steps.append("돈이 묶여있어! 점수를 1.5배 높여서 빨리 팔게 유도해. (재고령>90일)")
+                if self.store_type == "PREMIUM" and w_ceo >= 0.5:
+                    path_steps.append("브랜드 이미지 최우선(CEO 가중)에 의해 선정됨")
+                elif self.store_type == "OUTLET" and w_inv >= 0.5:
+                    path_steps.append("재고 비우기(INV 가중)에 의해 선정됨")
+                if not path_steps:
+                    path_steps.append("균형 점수에 의해 선정됨")
+
+                log_entry = self._build_reasoning_log(p, ceo, inv, op, total, path_steps)
+                script = self._build_seller_script(p, path_steps[0] if path_steps else "균형 점수")
+                scored.append({
+                    "product_id": p.get("product_id") or p.get("product_name"),
+                    "product_name": p.get("product_name") or p.get("product_id"),
+                    "score": total,
+                    "ceo_score": ceo,
+                    "investor_score": inv,
+                    "operation_score": op,
+                    "reasoning": log_entry,
+                    "seller_script": script,
+                })
+            scored.sort(key=lambda x: (-(x["score"] or 0), str(x.get("product_name") or "")))
+
+            # 3. Output Layer — 상점별 맞춤형 모드: 엔진 상태·가중치 노출
+            reasoning_log = [x["reasoning"] for x in scored]
+            return {
+                "store_id": self.store_id,
+                "store_type": self.store_type,
+                "internal_state": self._get_internal_state(),
+                "weights": self._get_weights_dict(),
+                "recommendations": [
+                    {
+                        "product_id": x["product_id"],
+                        "product_name": x["product_name"],
+                        "score": x["score"],
+                        "reason": x["reasoning"]["reason"],
+                        "seller_script": x["seller_script"],
+                    }
+                    for x in scored
+                ],
+                "reasoning_log": reasoning_log,
+                "seller_scripts": [x["seller_script"] for x in scored],
+                "filter_rejected_log": rejected_log,
+                "fallback_used": False,
+                "fallback_reason": None,
+            }
+        except Exception as e:
+            return self._fallback_response(f"error: {type(e).__name__}: {e}")
+
+    def _fallback_response(
+        self, fallback_reason: str, rejected_log: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """
+        리스크: 예외/0건 시 빈 응답이면 대시보드·연동 오류.
+        방패: 항상 동일 구조의 Fallback 반환으로 실수해도 손실 최소화.
+        """
+        return {
+            "store_id": self.store_id,
+            "store_type": self.store_type,
+            "internal_state": self._get_internal_state(),
+            "weights": self._get_weights_dict(),
+            "recommendations": list(GROWTH_STRATEGY_FALLBACK_ITEMS),
+            "reasoning_log": [
+                {"product_id": item["product_id"], "product_name": item["product_name"], "reason": item["reason"], "if_then_path": [fallback_reason], "fallback": True}
+                for item in GROWTH_STRATEGY_FALLBACK_ITEMS
+            ],
+            "seller_scripts": [],
+            "filter_rejected_log": rejected_log if rejected_log is not None else [],
+            "fallback_used": True,
+            "fallback_reason": fallback_reason,
+        }
+
+
+def get_store_growth_strategy_recommendations(
+    store_id: str,
+    store_type: str = "STANDARD",
+    products: Optional[List[Dict[str, Any]]] = None,
+    target_compatibility_tags: Optional[List[str]] = None,
+    target_charger_type: Optional[str] = None,
+    main_device_price: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    상점별 성장 전략 엔진 진입점.
+    - main_device_price: 1000$ 이상이면 10$ 이하 추천에 CEO 80% 감점.
+    - target_charger_type: 메인 기기 충전 타입(magsafe, usb-c, lightning). 다르면 COO로 제외.
+    """
+    engine = StoreGrowthStrategyEngine(store_id=store_id, store_type=store_type)
+    return engine.run(
+        products=products or [],
+        target_compatibility_tags=target_compatibility_tags or [],
+        target_charger_type=target_charger_type,
+        main_device_price=main_device_price,
+    )
+
+
+# dashboard_sales_data.sql 의 sales_data 테이블 컬럼명 (연동 확인용)
+SALES_DATA_COLUMNS = (
+    "sale_id", "sale_date", "store_id", "product_id", "quantity", "product_name",
+    "category_id", "launch_date", "price", "category_name", "store_name", "city", "country",
+    "total_sales", "store_stock_quantity", "inventory", "frozen_money", "safety_stock", "status",
+)
+
+
+def _infer_compatibility_tags(product_name: str, category_name: str) -> List[str]:
+    """product_name, category_name에서 compatibility_tags 추론 (충전/연결 타입 등)."""
+    tags = []
+    name = (product_name or "").lower()
+    cat = (category_name or "").lower()
+    if "magsafe" in name or "mag safe" in name:
+        tags.append("magsafe")
+    if "usb-c" in name or "usbc" in name or "usb c" in name:
+        tags.append("usb-c")
+    if "lightning" in name:
+        tags.append("lightning")
+    if cat:
+        tags.append(cat.replace(" ", "_"))
+    if not tags:
+        tags.append("general")
+    return list(dict.fromkeys(tags))
+
+
+def build_products_from_dashboard_sales_data(
+    df: pd.DataFrame, store_id: Optional[str] = None, top_n_per_product: int = 1
+) -> List[Dict[str, Any]]:
+    """
+    dashboard_sales_data.sql 의 sales_data 테이블과 연동.
+    테이블 스키마: sale_id, sale_date, store_id, product_id, quantity, product_name,
+    category_id, launch_date, price, category_name, store_name, city, country,
+    total_sales, store_stock_quantity, inventory, frozen_money, safety_stock, status.
+    컬럼명이 Product_Name, product_name 등으로 되어 있어도 매핑하여 사용.
+    반환: 엔진 입력용 리스트 (price, margin, stock_age, compatibility_tags 필수 포함).
+    """
+    if df is None or df.empty:
+        return []
+    product_col = "product_name" if "product_name" in df.columns else ("Product_Name" if "Product_Name" in df.columns else None)
+    pid_col = "product_id" if "product_id" in df.columns else None
+    price_col = "price" if "price" in df.columns else None
+    cat_col = "category_name" if "category_name" in df.columns else None
+    launch_col = "launch_date" if "launch_date" in df.columns else None
+    inv_col = "inventory" if "inventory" in df.columns else None
+    if not product_col or not price_col:
+        return []
+    sub = df
+    if store_id and "store_id" in df.columns:
+        sub = df[df["store_id"].astype(str).str.strip() == str(store_id).strip()]
+    if sub.empty:
+        sub = df
+    agg = sub.groupby(product_col, as_index=False).agg({
+        price_col: "first",
+        **({cat_col: "first"} if cat_col else {}),
+        **({launch_col: "min"} if launch_col and launch_col in sub.columns else {}),
+        **({inv_col: "sum"} if inv_col and inv_col in sub.columns else {}),
+    })
+    out = []
+    today = pd.Timestamp.now().normalize()
+    for _, row in agg.iterrows():
+        name = str(row[product_col]).strip() if pd.notna(row[product_col]) else ""
+        if not name:
+            continue
+        price = float(row[price_col]) if pd.notna(row[price_col]) else 299.0
+        cat = str(row[cat_col]).strip() if cat_col and pd.notna(row.get(cat_col)) else ""
+        launch = row.get(launch_col)
+        if pd.notna(launch) and launch:
+            try:
+                launch_ts = pd.Timestamp(launch).normalize()
+                stock_age = (today - launch_ts).days
+            except Exception:
+                stock_age = 0
+        else:
+            stock_age = 0
+        inv = int(row[inv_col]) if inv_col and pd.notna(row.get(inv_col)) else 1
+        tags = _infer_compatibility_tags(name, cat)
+        out.append({
+            "product_id": pid_col and pd.notna(row.get(pid_col)) and str(row[pid_col]).strip() or name,
+            "product_name": name,
+            "price": price,
+            "margin": 0.35,
+            "stock_age": max(0, stock_age),
+            "compatibility_tags": tags,
+            "stock": max(0, inv),
+            "expected_eta": None,
+        })
+    return out
+
+
+def _build_growth_strategy_products_from_df(
+    df: pd.DataFrame, store_id: str, product_names: List[str]
+) -> List[Dict[str, Any]]:
+    """
+    기존 추천 결과(상품명 목록) + df에서 price, margin, stock_age, compatibility_tags 수집.
+    df는 dashboard_sales_data.sales_data 와 동일/호환 스키마일 때 정확도 높음.
+    없으면 기본값으로 채워 스키마 만족시키고 엔진 입력용 리스트 반환.
+    """
+    if df is None or df.empty or not product_names:
+        return []
+    product_col = "Product_Name" if "Product_Name" in df.columns else "product_name"
+    price_col = "price" if "price" in df.columns else None
+    cat_col = "category_name" if "category_name" in df.columns else None
+    launch_col = "launch_date" if "launch_date" in df.columns else None
+    inv_col = "inventory" if "inventory" in df.columns else None
+    today = pd.Timestamp.now().normalize()
+    out = []
+    for name in product_names[:30]:
+        name = str(name).strip()
+        if not name:
+            continue
+        rows = df[df[product_col].astype(str).str.strip() == name]
+        row = rows.iloc[0] if not rows.empty else None
+        price = float(row[price_col]) if price_col and row is not None and price_col in df.columns and pd.notna(row.get(price_col)) else 299.0
+        margin = 0.35
+        stock_age = 0
+        if launch_col and row is not None and launch_col in df.columns and pd.notna(row.get(launch_col)):
+            try:
+                launch_ts = pd.Timestamp(row[launch_col]).normalize()
+                stock_age = (today - launch_ts).days
+            except Exception:
+                pass
+        inv = int(row[inv_col]) if inv_col and row is not None and inv_col in df.columns and pd.notna(row.get(inv_col)) else 1
+        tags = _infer_compatibility_tags(name, str(row[cat_col]).strip() if cat_col and row is not None and cat_col in df.columns and pd.notna(row.get(cat_col)) else "")
+        out.append({
+            "product_id": name,
+            "product_name": name,
+            "price": price,
+            "margin": margin,
+            "stock_age": max(0, stock_age),
+            "compatibility_tags": tags,
+            "stock": max(0, inv),
+            "expected_eta": None,
+        })
+    return out
+
+
+def get_store_recommendations(store_id: str, store_type: str = "STANDARD") -> Dict[str, Any]:
+    """
+    특정 store_id에 대한 4가지 추천 모델 결과 + 상점별 성장 전략 엔진 결과 반환.
     
     반환:
     {
         "store_id": str,
-        "store_summary": {
-            "total_sales": float,
-            "product_count": int,
-            "store_name": str
-        },
-        "association": [...],  # 연관 분석 결과
-        "similar_store": [...],  # 유사 상점 결과
-        "latent_demand": [...],  # 잠재 수요 결과
-        "trend": [...]  # 트렌드 분석 결과
+        "store_summary": {...},
+        "association": [...],
+        "similar_store": [...],
+        "latent_demand": [...],
+        "trend": [...],
+        "growth_strategy": { "recommendations", "reasoning_log", "fallback_used", ... }  # 투자자 보고용
     }
     """
     df = load_sales_dataframe()
     if df is None or df.empty:
+        growth_fallback = get_store_growth_strategy_recommendations(store_id, store_type, [], [])
         return {
             "store_id": store_id,
             "store_summary": {"total_sales": 0, "product_count": 0, "store_name": ""},
             "association": [],
             "similar_store": [],
             "latent_demand": [],
-            "trend": []
+            "trend": [],
+            "growth_strategy": growth_fallback,
         }
     
     store_df, _ = _get_store_data(df, store_id)
@@ -1240,6 +1820,41 @@ def get_store_recommendations(store_id: str) -> Dict[str, Any]:
         for item in trend_list:
             item.setdefault("is_fallback", False)
 
+        # 상점별 성장 전략 엔진: 4가지 추천 결과에서 상품명 수집 → 엔진 입력 생성 → 실행 (dashboard_sales_data 호환)
+        all_product_names = []
+        for item in association_list + similar_list + latent_list + trend_list:
+            pn = (item.get("product_name") or "").strip()
+            if pn and pn not in all_product_names:
+                all_product_names.append(pn)
+        target_tags = []
+        main_device_price = None
+        target_charger_type = None
+        if store_df is not None and not store_df.empty:
+            cat_col = "category_name" if "category_name" in store_df.columns else None
+            price_col = "price" if "price" in store_df.columns else None
+            product_col = "Product_Name" if "Product_Name" in store_df.columns else "product_name"
+            if cat_col:
+                target_tags = store_df[cat_col].dropna().astype(str).str.strip().unique().tolist()
+                target_tags = [t for t in target_tags if t and t != "nan"]
+            if price_col and price_col in store_df.columns:
+                store_df_num = store_df.copy()
+                store_df_num["_price_num"] = pd.to_numeric(store_df_num[price_col], errors="coerce")
+                idx = store_df_num["_price_num"].idxmax()
+                if pd.notna(idx):
+                    main_device_price = float(store_df_num.loc[idx, "_price_num"])
+                    if product_col in store_df_num.columns and cat_col:
+                        top_name = str(store_df_num.loc[idx, product_col] or "")
+                        top_cat = str(store_df_num.loc[idx, cat_col] or "") if pd.notna(store_df_num.loc[idx, cat_col]) else ""
+                        target_charger_type = next((t for t in _infer_compatibility_tags(top_name, top_cat) if t in ("magsafe", "usb-c", "lightning")), None)
+        if not target_tags:
+            target_tags = ["general"]
+        growth_products = _build_growth_strategy_products_from_df(df, store_id, all_product_names)
+        if not growth_products and "product_name" in df.columns:
+            growth_products = build_products_from_dashboard_sales_data(df, store_id=store_id)
+        growth_strategy = get_store_growth_strategy_recommendations(
+            store_id, store_type, growth_products, target_tags, target_charger_type, main_device_price
+        )
+
         return {
             "store_id": store_id,
             "store_summary": store_summary,
@@ -1247,9 +1862,11 @@ def get_store_recommendations(store_id: str) -> Dict[str, Any]:
             "similar_store": similar_list,
             "latent_demand": latent_list,
             "trend": trend_list,
+            "growth_strategy": growth_strategy,
         }
     except Exception as e:
         print(f"[추천 시스템] store_id={store_id} 오류: {e}")
+        growth_fallback = get_store_growth_strategy_recommendations(store_id, store_type, [], [])
         return {
             "store_id": store_id,
             "store_summary": store_summary,
@@ -1257,6 +1874,7 @@ def get_store_recommendations(store_id: str) -> Dict[str, Any]:
             "similar_store": _fallback_similar_store(),
             "latent_demand": _fallback_latent_demand(),
             "trend": _fallback_trend(),
+            "growth_strategy": growth_fallback,
         }
 
 

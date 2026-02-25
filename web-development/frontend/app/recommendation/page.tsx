@@ -37,6 +37,30 @@ interface StoreRecommendation {
   is_fallback?: boolean;
 }
 
+/** 상점별 성장 전략 엔진 — Dynamic Weighting(상점별 맞춤형 모드) + 이익·브랜드·운영 */
+interface GrowthStrategyData {
+  store_id: string;
+  store_type: string;
+  /** 엔진의 상태 (Internal State): 매장 성격에 따른 엔진 성격 */
+  internal_state?: string;
+  /** if 가중치 설정 (Weights): CEO, INV, OPS */
+  weights?: { CEO?: number; INV?: number; OPS?: number };
+  recommendations: { product_id?: string; product_name?: string; score?: number; reason?: string; seller_script?: string }[];
+  reasoning_log?: {
+    product_id?: string;
+    product_name?: string;
+    reason?: string;
+    if_then_path?: string[];
+    scores?: { ceo?: number; investor?: number; operation?: number; total?: number };
+    store_type?: string;
+    fallback?: boolean;
+  }[];
+  seller_scripts?: string[];
+  filter_rejected_log?: { product?: string; reason?: string }[];
+  fallback_used?: boolean;
+  fallback_reason?: string | null;
+}
+
 interface StoreRecommendationsData {
   store_id: string;
   store_summary: {
@@ -48,6 +72,7 @@ interface StoreRecommendationsData {
   similar_store: StoreRecommendation[];
   latent_demand: StoreRecommendation[];
   trend: StoreRecommendation[];
+  growth_strategy?: GrowthStrategyData;
 }
 
 interface Store {
@@ -161,6 +186,7 @@ export default function RecommendationPage() {
   const [loading, setLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(false);
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const [storeType, setStoreType] = useState<'STANDARD' | 'PREMIUM' | 'OUTLET'>('STANDARD');
   const [stores, setStores] = useState<Store[]>([]);
   const [selectedContinent, setSelectedContinent] = useState<string>('');
   const [selectedCountry, setSelectedCountry] = useState<string>('');
@@ -401,20 +427,23 @@ export default function RecommendationPage() {
     return funnelStageWeights.stages.find((s) => s.stage === selectedFunnelStage) ?? funnelStageWeights.stages[0];
   }, [funnelStageWeights, selectedFunnelStage]);
 
-  // 선택된 store_id의 추천 데이터 + 매출 예측 + 수요 대시보드 로드
+  // 선택된 store_id의 추천 데이터 + 매출 예측 + 수요 대시보드 로드 (store_type: 성장 전략 엔진용)
   useEffect(() => {
     if (!selectedStoreId) return;
     setStoreLoading(true);
     const params = new URLSearchParams({ store_id: selectedStoreId, year: '2024' });
+    const recUrl = `/api/store-recommendations/${selectedStoreId}?store_type=${encodeURIComponent(storeType)}`;
     Promise.all([
-      apiGet<StoreRecommendationsData>(`/api/store-recommendations/${selectedStoreId}`),
+      apiGet<StoreRecommendationsData>(recUrl),
       apiGet<SalesForecastData>(`/api/store-sales-forecast/${selectedStoreId}`),
       apiGet<DemandDashboardData>(`/api/demand-dashboard?${params.toString()}`),
       apiGet<UserPersonalizedRecommendationData>(`/api/user-personalized-recommendations?store_id=${encodeURIComponent(selectedStoreId)}`),
       apiGet<CollabFilterRecommendationData>(`/api/collab-filter-recommendations?store_id=${encodeURIComponent(selectedStoreId)}`),
     ])
       .then(([rec, forecast, demand, userRec, collabRec]) => {
-        if (rec && (rec.store_summary?.total_sales > 0 || rec.association?.length > 0 || rec.similar_store?.length > 0 || rec.latent_demand?.length > 0 || rec.trend?.length > 0)) {
+        const hasFour = rec && (rec.association?.length > 0 || rec.similar_store?.length > 0 || rec.latent_demand?.length > 0 || rec.trend?.length > 0);
+        const hasGrowth = rec?.growth_strategy?.recommendations?.length;
+        if (rec && (rec.store_summary?.total_sales > 0 || hasFour || hasGrowth)) {
           setRecommendations(rec);
         } else {
           console.warn('[Recommendation] store-recommendations returned empty data:', rec);
@@ -434,7 +463,7 @@ export default function RecommendationPage() {
         setCollabFilterRec(null);
       })
       .finally(() => setStoreLoading(false));
-  }, [selectedStoreId]);
+  }, [selectedStoreId, storeType]);
 
   // 매출 시계열 차트용 통합 데이터 (실측 + 예측, 신뢰구간) — 결측치 제거 후 스캐터·라인용
   const salesChartData = useMemo(() => {
@@ -572,6 +601,18 @@ export default function RecommendationPage() {
                   )}
                 </select>
               </div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-sm font-medium text-[#1d1d1f] mb-1">상점 타입 (성장 전략)</label>
+                <select
+                  value={storeType}
+                  onChange={(e) => setStoreType(e.target.value as 'STANDARD' | 'PREMIUM' | 'OUTLET')}
+                  className="w-full text-sm border border-gray-200 rounded-lg px-4 py-2 bg-white text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#0071e3]"
+                >
+                  <option value="STANDARD">STANDARD</option>
+                  <option value="PREMIUM">PREMIUM (CEO 가중치 2배)</option>
+                  <option value="OUTLET">OUTLET (재고령 가중치 3배)</option>
+                </select>
+              </div>
             </div>
           </div>
           {recommendations && (
@@ -580,6 +621,9 @@ export default function RecommendationPage() {
               <strong className="text-[#1d1d1f]">
                 {formatStoreDisplay(stripApplePrefix(recommendations.store_summary?.store_name ?? selectedStoreId))}
               </strong>
+              {recommendations.growth_strategy?.store_type && (
+                <span className="ml-2 text-[#86868b]">· 성장 전략: {recommendations.growth_strategy.store_type}</span>
+              )}
             </p>
           )}
         </div>
@@ -1414,6 +1458,62 @@ export default function RecommendationPage() {
                 </div>
               </div>
             </div>
+
+            {/* 상점별 성장 전략 엔진 — 상점별 맞춤형 모드(Dynamic Weighting) + 이익·브랜드·운영 */}
+            {recommendations?.growth_strategy && (
+              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                <div className="px-6 py-4 bg-slate-50 border-b border-gray-200">
+                  <h3 className="text-sm font-semibold text-[#1d1d1f]">📋 상점별 성장 전략 (상점별 맞춤형 모드)</h3>
+                  <p className="text-xs text-[#86868b] mt-1">
+                    Filter: 팔 수 없는 것/팔면 안 되는 것(COO) → Scoring: Dynamic Weighting → Output: 대화 대본
+                  </p>
+                  {recommendations.growth_strategy.internal_state && (
+                    <p className="text-sm text-[#1d1d1f] mt-2 font-medium">엔진의 상태: &quot;{recommendations.growth_strategy.internal_state}&quot;</p>
+                  )}
+                  {recommendations.growth_strategy.weights && (
+                    <p className="text-xs text-[#6e6e73] mt-1">
+                      가중치: CEO {recommendations.growth_strategy.weights.CEO?.toFixed(1)}, INV {recommendations.growth_strategy.weights.INV?.toFixed(1)}, OPS {recommendations.growth_strategy.weights.OPS?.toFixed(1)}
+                    </p>
+                  )}
+                  {recommendations.growth_strategy.fallback_used && (
+                    <p className="text-xs text-amber-700 mt-1">⚠ Fallback 사용: {recommendations.growth_strategy.fallback_reason ?? '기본 추천'}</p>
+                  )}
+                  {(recommendations.growth_strategy.filter_rejected_log?.length ?? 0) > 0 && (
+                    <p className="text-xs text-red-700 mt-1">COO 제외: {recommendations.growth_strategy.filter_rejected_log?.length}건 (호환/충전기 타입 불일치)</p>
+                  )}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#f5f5f7]">
+                      <tr className="text-[#6e6e73] text-left">
+                        <th className="px-4 py-2">제품명</th>
+                        <th className="px-4 py-2 text-right">점수</th>
+                        <th className="px-4 py-2">선정 이유</th>
+                        <th className="px-4 py-2">판매자 대화 대본</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(recommendations.growth_strategy.recommendations ?? []).map((item, i) => (
+                        <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+                          <td className="px-4 py-2 text-[#1d1d1f]">{item.product_name ?? item.product_id}</td>
+                          <td className="px-4 py-2 text-right text-[#1d1d1f] font-medium">{item.score?.toFixed(2)}</td>
+                          <td className="px-4 py-2 text-[#6e6e73]">{item.reason ?? '-'}</td>
+                          <td className="px-4 py-2 text-[#6e6e73] text-xs max-w-xs">{item.seller_script ?? '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {recommendations.growth_strategy.reasoning_log && recommendations.growth_strategy.reasoning_log.length > 0 && (
+                  <details className="px-6 py-4 border-t border-gray-100">
+                    <summary className="text-xs font-medium text-[#6e6e73] cursor-pointer">보고용 JSON (if_then_path)</summary>
+                    <pre className="mt-2 p-4 bg-[#f5f5f7] rounded-lg text-xs overflow-x-auto max-h-64 overflow-y-auto">
+                      {JSON.stringify(recommendations.growth_strategy.reasoning_log, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            )}
 
             {/* 매출 예측 시계열 차트: 향후 30일 (분석 카드 이후 위치) */}
             {salesForecast && salesChartData.length > 0 && (

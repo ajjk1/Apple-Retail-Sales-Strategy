@@ -2100,26 +2100,46 @@ def api_store_sales_forecast(store_id: str, days: int = 30):
 
 
 @app.get("/api/store-recommendations/{store_id}")
-def api_store_recommendations(store_id: str):
+def api_store_recommendations(store_id: str, store_type: Optional[str] = None):
     """
-    특정 store_id에 대한 4가지 추천 모델 결과 반환.
-    - 연관 분석 (Association): Lift 기반 병행 구매 추천
-    - 유사 상점 (CF): Cosine Similarity 기반 유사 상점의 베스트셀러
-    - 잠재 수요 (SVD/MF): 행렬 분해 기반 예상 판매량
-    - 트렌드 분석: 최근 판매 증가율 기반
+    특정 store_id에 대한 4가지 추천 모델 + 상점별 성장 전략 엔진 결과 반환.
+    - store_type: PREMIUM | OUTLET | STANDARD (미지정 시 STANDARD). PREMIUM=CEO 가중치 2배, OUTLET=재고령 가중치 3배.
+    - growth_strategy: 투자자 보고용 reasoning_log(if-then 경로) 포함.
     """
+    safe_store_type = (store_type or "STANDARD").strip().upper()
+    if safe_store_type not in ("PREMIUM", "OUTLET", "STANDARD"):
+        safe_store_type = "STANDARD"
+    _internal_states = {"PREMIUM": "브랜드 이미지가 최우선이야", "OUTLET": "무조건 재고를 비워야 해", "STANDARD": "골고루 잘 팔아보자"}
+    _weights_map = {"PREMIUM": {"CEO": 0.6, "INV": 0.2, "OPS": 0.2}, "OUTLET": {"CEO": 0.1, "INV": 0.7, "OPS": 0.2}, "STANDARD": {"CEO": 0.3, "INV": 0.4, "OPS": 0.3}}
+    growth_fallback = {
+        "store_id": store_id,
+        "store_type": safe_store_type,
+        "internal_state": _internal_states.get(safe_store_type, _internal_states["STANDARD"]),
+        "weights": _weights_map.get(safe_store_type, _weights_map["STANDARD"]),
+        "recommendations": [
+            {"product_id": "FB-1", "product_name": "AppleCare+", "score": 0.9, "reason": "Fallback: 기본 추천 1", "seller_script": "Fallback 기본 추천입니다."},
+            {"product_id": "FB-2", "product_name": "USB-C 어댑터", "score": 0.85, "reason": "Fallback: 기본 추천 2", "seller_script": "Fallback 기본 추천입니다."},
+            {"product_id": "FB-3", "product_name": "MagSafe 충전기", "score": 0.8, "reason": "Fallback: 기본 추천 3", "seller_script": "Fallback 기본 추천입니다."},
+        ],
+        "reasoning_log": [],
+        "seller_scripts": [],
+        "filter_rejected_log": [],
+        "fallback_used": True,
+        "fallback_reason": "api_fallback",
+    }
     fallback = {
         "store_id": store_id,
         "store_summary": {"total_sales": 0, "product_count": 0, "store_name": ""},
         "association": [],
         "similar_store": [],
         "latent_demand": [],
-        "trend": []
+        "trend": [],
+        "growth_strategy": growth_fallback,
     }
     if get_store_recommendations is None:
         return fallback
     try:
-        return get_store_recommendations(store_id)
+        return get_store_recommendations(store_id, store_type=safe_store_type)
     except Exception as e:
         print(f"[Apple Retail API] api_store_recommendations 오류: {e}")
         return fallback
