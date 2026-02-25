@@ -610,9 +610,9 @@ export default function RecommendationPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
                   <tr className="text-left text-[#6e6e73]">
-                    <th className="py-2 pr-3">국가 (한글(영문))</th>
-                    <th className="py-2 pr-3">상점 명 (한글(영문))</th>
-                    <th className="py-2 pr-3">제품 명 (한글(영문))</th>
+                    <th className="py-2 pr-3">국가</th>
+                    <th className="py-2 pr-3">상점 명</th>
+                    <th className="py-2 pr-3">제품 명</th>
                     <th className="py-2 pr-3 text-right">재고</th>
                     <th className="py-2 pr-3 text-right">안전재고</th>
                     <th className="py-2 pr-3 text-right">자금동결 ($)</th>
@@ -910,22 +910,6 @@ export default function RecommendationPage() {
           <p className="text-[#6e6e73] text-center py-12">추천 데이터 로딩 중...</p>
         ) : recommendations ? (
           <>
-            {/* 상점 요약 정보 */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <p className="text-xs text-[#86868b] mb-1">상점명</p>
-                <p className="text-lg font-semibold text-[#1d1d1f]">{recommendations.store_summary?.store_name ?? selectedStoreId}</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <p className="text-xs text-[#86868b] mb-1">총 매출</p>
-                <p className="text-lg font-semibold text-[#1d1d1f]">₩{(recommendations.store_summary?.total_sales ?? 0).toLocaleString()}</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-                <p className="text-xs text-[#86868b] mb-1">취급 품목 수</p>
-                <p className="text-lg font-semibold text-[#1d1d1f]">{recommendations.store_summary?.product_count ?? 0}개</p>
-              </div>
-            </div>
-
             {/* 상점별 성장 전략 엔진 — 상점별 맞춤형 모드(Dynamic Weighting) + 이익·브랜드·운영 */}
             {recommendations?.growth_strategy && (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
