@@ -57,6 +57,12 @@ function getRewrites(backendUrl) {
 }
 
 const nextConfig = {
+  async redirects() {
+    return [
+      { source: '/investor', destination: '/recommendation/investor', permanent: false },
+      { source: '/seller', destination: '/recommendation/seller', permanent: false },
+    ];
+  },
   async rewrites() {
     // Vercel 또는 NODE_ENV=production: 리터럴 PRODUCTION_REWRITES만 사용 (process.env 미사용)
     if (process.env.VERCEL === '1' || process.env.NODE_ENV === 'production') {

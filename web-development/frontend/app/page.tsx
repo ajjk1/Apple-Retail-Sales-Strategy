@@ -1584,7 +1584,7 @@ export default function Home() {
               </p>
             </Link>
             <Link
-              href="/investor"
+              href="/recommendation/investor"
               className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
             >
               <h3 className="text-sm font-medium text-[#6e6e73] mb-2">투자자 대시보드</h3>
@@ -1592,7 +1592,7 @@ export default function Home() {
               <p className="text-xs text-[#86868b] mt-1">동결 자금 · 엔진 성과 · 상태 알림 (dashboard_sales_data 기반)</p>
             </Link>
             <Link
-              href="/seller"
+              href="/recommendation/seller"
               className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
             >
               <h3 className="text-sm font-medium text-[#6e6e73] mb-2">판매자 퀵 대시보드</h3>
