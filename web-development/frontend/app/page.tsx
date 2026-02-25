@@ -1538,98 +1538,28 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setShowDemandDashboard(true)}
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow"
+              className="bg-white rounded-2xl p-6 w-full hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow flex items-center justify-center"
             >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">수요</h3>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xl font-bold text-[#1d1d1f]">
-                  {demandTotalDisplay != null ? `${demandTotalDisplay.toLocaleString()}${QUANTITY_UNIT}` : '—'}
-                </p>
-                {/* 패널 미니 파이차트 (카테고리 100% 기준) */}
-                {demandCategoryPercentData.length > 0 ? (
-                  <div className="w-20 h-20 shrink-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={demandCategoryPercentData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="55%"
-                          outerRadius="85%"
-                          paddingAngle={1}
-                          dataKey="value"
-                          isAnimationActive={false}
-                        >
-                          {demandCategoryPercentData.map((_, i) => (
-                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : null}
-              </div>
-              <p className="text-xs text-[#86868b] mt-1">
-                {selectedContinent
-                  ? (continentPieData.find((c) => c.continent === selectedContinent)?.continent_ko ?? selectedContinent)
-                  : selectedCountry
-                    ? formatCountryDisplay(selectedCountry)
-                    : selectedStoreId
-                      ? formatStoreDisplay(selectedStoreId)
-                      : '클릭 시 수요 대시보드'}
-                {demandTotalDisplay != null ? ` · ${selectedYear}년` : ''}
-              </p>
+              <h3 className="text-sm font-medium text-[#1d1d1f] text-center">수요</h3>
             </button>
             <Link
               href="/sales"
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
+              className="bg-white rounded-2xl p-6 w-full hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow flex items-center justify-center"
             >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">매출</h3>
-              <p className="text-xl font-bold text-[#1d1d1f]">
-                {salesBoxLoading ? '…' : salesBoxValue != null ? salesBoxValue.toLocaleString() : '—'}
-              </p>
-              <p className="text-xs text-[#86868b] mt-1">
-                {selectedContinent || selectedCountry || selectedStoreId
-                  ? 'Sales analysis.py 연동 · 클릭 시 매출 대시보드'
-                  : '클릭 시 매출 대시보드'}
-              </p>
+              <h3 className="text-sm font-medium text-[#1d1d1f] text-center">매출</h3>
             </Link>
             <button
               type="button"
               onClick={() => setShowSafetyStockDashboard(true)}
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow"
+              className="bg-white rounded-2xl p-6 w-full hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow flex items-center justify-center"
             >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">안전재고</h3>
-              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
-              <p className="text-xs text-[#86868b] mt-1">클릭 시 안전재고 대시보드</p>
+              <h3 className="text-sm font-medium text-[#1d1d1f] text-center">안전재고</h3>
             </button>
             <Link
               href="/recommendation"
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
+              className="bg-white rounded-2xl p-6 w-full hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow flex items-center justify-center"
             >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">추천</h3>
-              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
-              <p className="text-xs text-[#86868b] mt-1">
-                {selectedContinent || selectedCountry || selectedStoreId
-                  ? 'Real-time execution and performance dashboard 연동 · 클릭 시 추천 대시보드'
-                  : '클릭 시 추천 대시보드'}
-              </p>
-            </Link>
-            <Link
-              href="/recommendation/investor"
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
-            >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">투자자 대시보드</h3>
-              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
-              <p className="text-xs text-[#86868b] mt-1">동결 자금 · 엔진 성과 · 상태 알림 (dashboard_sales_data 기반)</p>
-            </Link>
-            <Link
-              href="/recommendation/seller"
-              className="bg-white rounded-2xl p-6 w-full text-left hover:bg-[#f5f5f7] transition-colors cursor-pointer border border-gray-100 shadow-sm hover:shadow block"
-            >
-              <h3 className="text-sm font-medium text-[#6e6e73] mb-2">판매자 퀵 대시보드</h3>
-              <p className="text-xl font-bold text-[#1d1d1f]">—</p>
-              <p className="text-xs text-[#86868b] mt-1">추천 상품·이유 두 줄 · 신호등 · 대안 보기 · 예상 기여 점수</p>
+              <h3 className="text-sm font-medium text-[#1d1d1f] text-center">추천</h3>
             </Link>
           </section>
         ) : (
