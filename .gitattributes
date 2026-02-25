@@ -1,0 +1,9 @@
+# Line ending normalization: default auto-detect text, normalize on commit/checkout
+* text=auto
+
+# Python: always use LF (avoids LF/CRLF warning on Windows)
+*.py text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+*.ps1 text eol=crlf
