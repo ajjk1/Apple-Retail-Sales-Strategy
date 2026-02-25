@@ -1285,7 +1285,7 @@ export default function Home() {
     const fallback = demandDashboardData?.overall_quantity_by_year ?? overallQuantityByYear;
     if (hasSelection && demandTotalByYear === 0 && fallback != null) return fallback;
     return demandTotalByYear;
-  }, [demandTotalByYear, demandDashboardData?.overall_quantity_by_year, overallQuantityByYear, selectedContinent, selectedCountry, selectedStoreId, selectedCity]);
+  }, [demandTotalByYear, demandDashboardData, overallQuantityByYear, selectedContinent, selectedCountry, selectedStoreId, selectedCity]);
 
   return (
     <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
@@ -2018,83 +2018,8 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 구역 2 & 3: 좌측 매장별 재고 막대 그래프 · 우측 관리자 코멘트 */}
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* 좌측: 매장별 재고 현황 — 가로형 막대 그래프 (재고 상태별 색상) */}
-                    <div className="lg:col-span-2 rounded-xl border border-gray-200 overflow-hidden bg-[#fafafa]">
-                      <div className="px-4 py-3 border-b border-gray-200 bg-white flex flex-wrap items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-[#1d1d1f]">매장별 재고 현황</h3>
-                          <p className="text-xs text-[#86868b] mt-0.5">
-                            막대에 마우스를 올리면 매장별 현재 총 재고, 목표 안전 재고, 조정 필요 수량, Frozen Money를 한 번에 보여줍니다.
-                            <span className="ml-1 text-[10px]">색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) | 기준: 잠긴 돈(₩)</span>
-                          </p>
-                        </div>
-                        <select
-                          value={inventoryStatusFilter}
-                          onChange={(e) => setInventoryStatusFilter(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] shrink-0"
-                        >
-                          <option value="">전체</option>
-                          <option value="위험">위험만</option>
-                          <option value="과잉">과잉만</option>
-                        </select>
-                      </div>
-                      <div className="p-4 overflow-auto" style={{ maxHeight: '420px' }}>
-                        {safetyStockInventoryListLoading ? (
-                          <p className="text-xs text-[#86868b] py-8 text-center">재고 목록 불러오는 중…</p>
-                        ) : safetyStockInventoryList.length === 0 ? (
-                          <p className="text-xs text-[#86868b] py-8 text-center">데이터 없음</p>
-                        ) : (
-                          <div className="w-full" style={{ minHeight: '320px' }}>
-                            <ResponsiveContainer width="100%" height={Math.max(320, Math.min(400, safetyStockInventoryList.length * 28))}>
-                              <BarChart
-                                layout="vertical"
-                                data={safetyStockInventoryList.map((row) => {
-                                  const rawName = (row.Store_Name ?? '').trim() || '—';
-                                  const displayName = stripApplePrefix(rawName);
-                                  const inventory = Number(row.Inventory) || 0;
-                                  const safety = Number(row.Safety_Stock) || 0;
-                                  const diff = inventory - safety;
-                                  const apiStatus = (row.Status ?? '').trim() || 'Normal';
-                                  const displayStatus = inventoryStatusToDisplay(apiStatus);
-                                  return {
-                                    name: displayName,
-                                    store_name: rawName,
-                                    잠긴돈: Number(row.Frozen_Money) || 0,
-                                    상태: displayStatus,
-                                    inventory,
-                                    safety,
-                                    diff,
-                                    frozen: Number(row.Frozen_Money) || 0,
-                                    statusLabel: displayStatus,
-                                  };
-                                })}
-                                margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                                <XAxis type="number" tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`} />
-                                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                                <Tooltip content={<StoreInventoryTooltip />} />
-                                <Bar dataKey="잠긴돈" radius={[0, 4, 4, 0]} isAnimationActive={true}>
-                                  {safetyStockInventoryList.map((row, i) => {
-                                    const displayStatus = inventoryStatusToDisplay((row.Status ?? '').trim());
-                                    let fill = '#3b82f6';
-                                    if (displayStatus === '위험') fill = '#dc2626';
-                                    else if (displayStatus === '과잉') fill = '#f59e0b';
-                                    else if (displayStatus === '정상') fill = '#22c55e';
-                                    return <Cell key={`cell-${i}`} fill={fill} />;
-                                  })}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 우측: 관리자 코멘트 (매장 선택 후 메모 저장) */}
-                    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col">
+                  {/* 관리자 코멘트 (매장 선택 후 메모 저장) */}
+                  <div className="mb-6 rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200 bg-[#f5f5f7]">
                         <h3 className="text-sm font-semibold text-[#1d1d1f]">관리자 코멘트</h3>
                         <p className="text-xs text-[#86868b] mt-0.5">
