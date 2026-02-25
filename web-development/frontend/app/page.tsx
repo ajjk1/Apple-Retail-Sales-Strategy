@@ -1669,56 +1669,6 @@ export default function Home() {
                 <p className="text-[#6e6e73] text-center py-12">로딩 중...</p>
               ) : (
                 <>
-                  {/* 구역 1. 상단: 재고 리스크 현황 (KPI 카드) - 이미지와 동일 순서이지만 기존 카드 디자인 유지 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {/* 1) 총 잠긴 돈 */}
-                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700 mb-1">💰 총 잠긴 돈 (Total Frozen Money)</p>
-                      <p className="text-2xl font-bold text-red-800">
-                        {safetyStockKpiData?.total_frozen_money != null
-                          ? `₩${Number(safetyStockKpiData.total_frozen_money).toLocaleString()}`
-                          : '—'}
-                      </p>
-                    </div>
-                    {/* 2) 예상 매출 */}
-                    <div className="rounded-xl p-4 border-2 border-green-200 bg-green-50">
-                      <p className="text-xs font-medium text-green-700 mb-1">💰 예상 매출 (Expected Revenue)</p>
-                      <p className="text-2xl font-bold text-green-800">
-                        {safetyStockKpiData?.expected_revenue != null && safetyStockKpiData.expected_revenue > 0
-                          ? `₩${Number(safetyStockKpiData.expected_revenue).toLocaleString()}`
-                          : '—'}
-                      </p>
-                      <div className="mt-1 space-y-0.5">
-                        {safetyStockKpiData?.predicted_demand != null && safetyStockKpiData.predicted_demand > 0 ? (
-                          <>
-                            <p className="text-xs text-green-600">
-                              예측 수요: <strong>{safetyStockKpiData.predicted_demand.toLocaleString()}대</strong> (ARIMA)
-                            </p>
-                            <p className="text-[10px] text-green-500 italic">
-                              계산식: (ARIMA 예측 수량) × 제품 단가
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-green-600">(ARIMA 예측 필요)</p>
-                        )}
-                      </div>
-                    </div>
-                    {/* 3) 과잉 품목 수 */}
-                    <div className="rounded-xl p-4 border-2 border-amber-200 bg-amber-50">
-                      <p className="text-xs font-medium text-amber-800 mb-1">🟡 과잉 품목 수</p>
-                      <p className="text-2xl font-bold text-amber-900">
-                        {safetyStockKpiData?.overstock_count != null ? safetyStockKpiData.overstock_count.toLocaleString() : '—'}
-                      </p>
-                    </div>
-                    {/* 4) 위험 품목 수 */}
-                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700 mb-1">🚨 위험 품목 수</p>
-                      <p className="text-2xl font-bold text-red-800">
-                        {safetyStockKpiData?.danger_count != null ? safetyStockKpiData.danger_count.toLocaleString() : '—'}
-                      </p>
-                    </div>
-                  </div>
-
                   {/* 과잉 재고 TOP 5 (수량 기준): 현재/목표 비교·절감 가능 금액·프로그레스 바 */}
                   {overstockTop5ByQty.length > 0 && (
                     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
@@ -1927,32 +1877,39 @@ export default function Home() {
                   {/* 위험 품목 top 5: DB 기준 테이블 (순위·상품명·현재재고·목표재고·발주량·지출 금액) */}
                   {riskyItemsTop5.length > 0 && (
                     <div className="mb-6">
-                      <div className="rounded-xl border border-gray-700 bg-[#2d2d2f] p-4">
-                        <h3 className="text-sm font-semibold text-white mb-1">위험 품목 top 5</h3>
-                        <p className="text-xs text-[#a1a1a6] mb-3">
-                          현재 재고가 목표 재고(안전 재고)보다 낮은 상품 중, 발주 필요량·예상 지출 금액 기준 상위 5개입니다.
-                        </p>
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                          <div>
+                            <h3 className="text-sm font-semibold text-[#1d1d1f]">위험 품목 Top 5</h3>
+                            <p className="text-xs text-[#86868b] mt-0.5">
+                              현재 재고가 목표 재고(안전 재고)보다 낮은 상품 중, 발주 필요량·예상 지출 금액 기준 상위 5개입니다.
+                            </p>
+                          </div>
+                          <span className="text-[10px] px-2 py-1 rounded bg-rose-50 text-rose-700 border border-rose-100">
+                            실데이터 기준
+                          </span>
+                        </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-left border-collapse">
                             <thead>
-                              <tr className="border-b border-gray-600">
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">순위</th>
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">상품명</th>
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">현재 재고</th>
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">목표 재고</th>
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">발주량</th>
-                                <th className="text-xs font-medium text-[#a1a1a6] py-2 pr-3">지출 금액</th>
+                              <tr className="border-b border-gray-200">
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">순위</th>
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">상품명</th>
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">현재 재고</th>
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">목표 재고</th>
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">발주량</th>
+                                <th className="text-xs font-medium text-[#6e6e73] py-2 pr-3">지출 금액</th>
                               </tr>
                             </thead>
                             <tbody>
                               {riskyItemsTop5.map((row) => (
-                                <tr key={row.rank} className="border-b border-gray-600/80">
-                                  <td className="text-sm text-white py-2 pr-3">{row.rank}</td>
-                                  <td className="text-sm text-white py-2 pr-3">{row.product_name || '—'}</td>
-                                  <td className="text-sm text-white py-2 pr-3">{(row.current_inventory ?? 0).toLocaleString()}대</td>
-                                  <td className="text-sm text-white py-2 pr-3">{(row.target_inventory ?? 0).toLocaleString()}대</td>
-                                  <td className="text-sm text-white py-2 pr-3">{(row.order_quantity ?? 0).toLocaleString()}대</td>
-                                  <td className="text-sm text-white py-2 pr-3">₩{(row.expenditure ?? 0).toLocaleString()}</td>
+                                <tr key={row.rank} className="border-b border-gray-100">
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">{row.rank}</td>
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">{row.product_name || '—'}</td>
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">{(row.current_inventory ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">{(row.target_inventory ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">{(row.order_quantity ?? 0).toLocaleString()}대</td>
+                                  <td className="text-sm text-[#1d1d1f] py-2 pr-3">₩{(row.expenditure ?? 0).toLocaleString()}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -2032,83 +1989,10 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 구역 2 & 3: 좌측 매장별 재고 막대 그래프 · 우측 관리자 코멘트 */}
+                  {/* 구역 2 & 3: 관리자 코멘트만 표시 */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* 좌측: 매장별 재고 현황 — 가로형 막대 그래프 (재고 상태별 색상) */}
-                    <div className="lg:col-span-2 rounded-xl border border-gray-200 overflow-hidden bg-[#fafafa]">
-                      <div className="px-4 py-3 border-b border-gray-200 bg-white flex flex-wrap items-center gap-3">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-semibold text-[#1d1d1f]">매장별 재고 현황</h3>
-                          <p className="text-xs text-[#86868b] mt-0.5">
-                            막대에 마우스를 올리면 매장별 현재 총 재고, 목표 안전 재고, 조정 필요 수량, Frozen Money를 한 번에 보여줍니다.
-                            <span className="ml-1 text-[10px]">색상: 위험(빨강) · 과잉(노랑/주황) · 정상(초록/파랑) | 기준: 잠긴 돈(₩)</span>
-                          </p>
-                        </div>
-                        <select
-                          value={inventoryStatusFilter}
-                          onChange={(e) => setInventoryStatusFilter(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3] shrink-0"
-                        >
-                          <option value="">전체</option>
-                          <option value="위험">위험만</option>
-                          <option value="과잉">과잉만</option>
-                        </select>
-                      </div>
-                      <div className="p-4 overflow-auto" style={{ maxHeight: '420px' }}>
-                        {safetyStockInventoryListLoading ? (
-                          <p className="text-xs text-[#86868b] py-8 text-center">재고 목록 불러오는 중…</p>
-                        ) : safetyStockInventoryList.length === 0 ? (
-                          <p className="text-xs text-[#86868b] py-8 text-center">데이터 없음</p>
-                        ) : (
-                          <div className="w-full" style={{ minHeight: '320px' }}>
-                            <ResponsiveContainer width="100%" height={Math.max(320, Math.min(400, safetyStockInventoryList.length * 28))}>
-                              <BarChart
-                                layout="vertical"
-                                data={safetyStockInventoryList.map((row) => {
-                                  const rawName = (row.Store_Name ?? '').trim() || '—';
-                                  const displayName = stripApplePrefix(rawName);
-                                  const inventory = Number(row.Inventory) || 0;
-                                  const safety = Number(row.Safety_Stock) || 0;
-                                  const diff = inventory - safety;
-                                  const apiStatus = (row.Status ?? '').trim() || 'Normal';
-                                  const displayStatus = inventoryStatusToDisplay(apiStatus);
-                                  return {
-                                    name: displayName,
-                                    store_name: rawName,
-                                    잠긴돈: Number(row.Frozen_Money) || 0,
-                                    상태: displayStatus,
-                                    inventory,
-                                    safety,
-                                    diff,
-                                    frozen: Number(row.Frozen_Money) || 0,
-                                    statusLabel: displayStatus,
-                                  };
-                                })}
-                                margin={{ top: 8, right: 24, left: 8, bottom: 8 }}
-                              >
-                                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                                <XAxis type="number" tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`} />
-                                <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: 11 }} />
-                                <Tooltip content={<StoreInventoryTooltip />} />
-                                <Bar dataKey="잠긴돈" radius={[0, 4, 4, 0]} isAnimationActive={true}>
-                                  {safetyStockInventoryList.map((row, i) => {
-                                    const displayStatus = inventoryStatusToDisplay((row.Status ?? '').trim());
-                                    let fill = '#3b82f6';
-                                    if (displayStatus === '위험') fill = '#dc2626';
-                                    else if (displayStatus === '과잉') fill = '#f59e0b';
-                                    else if (displayStatus === '정상') fill = '#22c55e';
-                                    return <Cell key={`cell-${i}`} fill={fill} />;
-                                  })}
-                                </Bar>
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 우측: 관리자 코멘트 (매장 선택 후 메모 저장) */}
-                    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col">
+                    {/* 관리자 코멘트 (매장 선택 후 메모 저장) */}
+                    <div className="lg:col-span-3 rounded-xl border border-gray-200 overflow-hidden bg-white flex flex-col">
                       <div className="px-4 py-3 border-b border-gray-200 bg-[#f5f5f7]">
                         <h3 className="text-sm font-semibold text-[#1d1d1f]">관리자 코멘트</h3>
                         <p className="text-xs text-[#86868b] mt-0.5">
