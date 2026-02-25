@@ -1152,3 +1152,11 @@ def get_demand_dashboard_data(
         result["overall_quantity_by_year"] = None
 
     return result
+
+
+if __name__ == "__main__":
+    forecast = get_sales_quantity_forecast()
+    print("[prediction model] 2020~2024 total quantity:", forecast.get("total_quantity_2020_2024"))
+    print("[prediction model] 2025 predicted quantity:", forecast.get("predicted_quantity_2025"), "method:", forecast.get("method"))
+    dashboard_sample = get_demand_dashboard_data()
+    print("[prediction model] demand-dashboard total_demand:", dashboard_sample.get("total_demand"))
