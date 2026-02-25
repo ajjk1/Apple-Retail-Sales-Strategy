@@ -53,6 +53,7 @@ UI: 메인 대시보드(3000) → "안전재고" 진입 시 오버레이 "Invent
   - 데이터 소스: SQL 전용(load_sales_dataframe → 01.data/*.sql). 모델: arima_model.joblib 전용.
   - [Inventory Action Center] 전용 로직은 본 파일에만 두고, UI↔API↔함수 매핑 문서화.
   - 과잉 재고 현황 카드: get_overstock_status_by_region() 추가 (대륙·국가·상점 구분, 카테고리별 순 정렬).
+  - 과잉 재고 타겟: 상품별 과잉 배수 100%~320% → 300%~450% (np.random.uniform 1.0~3.2 → 3.0~4.5).
 ----------------------------------------------------------------------
 
 [모듈화] 본 파일은 load_sales_data.py 의 load_sales_dataframe() 만 참조하여 데이터를 읽습니다.
@@ -186,12 +187,12 @@ def run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
         how="left",
     )
 
-    # [Step 2–3] 재고 수준 생성 및 과잉 재고 타겟 (상품별 100%~320% 난수 배수 → 과잉 수량 % 다양화)
+    # [Step 2–3] 재고 수준 생성 및 과잉 재고 타겟 (상품별 300%~450% 난수 배수 → 과잉 수량 % 다양화)
     np.random.seed(42)
     df["Inventory"] = (
         df["Safety_Stock"] + df["quantity"] + np.random.randint(0, 5, size=len(df))
     )
-    # 상품별 과잉 배수: 100%(1.0) ~ 320%(3.2) 구간 난수, 소수점 둘째 자리
+    # 상품별 과잉 배수: 300%(3.0) ~ 450%(4.5) 구간 난수, 소수점 둘째 자리
     target_products = [
         "MacBook Pro 16-inch",
         "Mac Studio",
@@ -201,7 +202,7 @@ def run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     ]
     np.random.seed(123)
     overstock_multipliers = {
-        p: round(float(np.random.uniform(1.0, 3.2)), 2)
+        p: round(float(np.random.uniform(3.0, 4.5)), 2)
         for p in target_products
     }
     for product_name, mult in overstock_multipliers.items():
