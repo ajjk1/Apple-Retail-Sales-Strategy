@@ -1669,56 +1669,6 @@ export default function Home() {
                 <p className="text-[#6e6e73] text-center py-12">로딩 중...</p>
               ) : (
                 <>
-                  {/* 구역 1. 상단: 재고 리스크 현황 (KPI 카드) - 이미지와 동일 순서이지만 기존 카드 디자인 유지 */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {/* 1) 총 잠긴 돈 */}
-                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700 mb-1">💰 총 잠긴 돈 (Total Frozen Money)</p>
-                      <p className="text-2xl font-bold text-red-800">
-                        {safetyStockKpiData?.total_frozen_money != null
-                          ? `₩${Number(safetyStockKpiData.total_frozen_money).toLocaleString()}`
-                          : '—'}
-                      </p>
-                    </div>
-                    {/* 2) 예상 매출 */}
-                    <div className="rounded-xl p-4 border-2 border-green-200 bg-green-50">
-                      <p className="text-xs font-medium text-green-700 mb-1">💰 예상 매출 (Expected Revenue)</p>
-                      <p className="text-2xl font-bold text-green-800">
-                        {safetyStockKpiData?.expected_revenue != null && safetyStockKpiData.expected_revenue > 0
-                          ? `₩${Number(safetyStockKpiData.expected_revenue).toLocaleString()}`
-                          : '—'}
-                      </p>
-                      <div className="mt-1 space-y-0.5">
-                        {safetyStockKpiData?.predicted_demand != null && safetyStockKpiData.predicted_demand > 0 ? (
-                          <>
-                            <p className="text-xs text-green-600">
-                              예측 수요: <strong>{safetyStockKpiData.predicted_demand.toLocaleString()}대</strong> (ARIMA)
-                            </p>
-                            <p className="text-[10px] text-green-500 italic">
-                              계산식: (ARIMA 예측 수량) × 제품 단가
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-xs text-green-600">(ARIMA 예측 필요)</p>
-                        )}
-                      </div>
-                    </div>
-                    {/* 3) 과잉 품목 수 */}
-                    <div className="rounded-xl p-4 border-2 border-amber-200 bg-amber-50">
-                      <p className="text-xs font-medium text-amber-800 mb-1">🟡 과잉 품목 수</p>
-                      <p className="text-2xl font-bold text-amber-900">
-                        {safetyStockKpiData?.overstock_count != null ? safetyStockKpiData.overstock_count.toLocaleString() : '—'}
-                      </p>
-                    </div>
-                    {/* 4) 위험 품목 수 */}
-                    <div className="rounded-xl p-4 border-2 border-red-200 bg-red-50">
-                      <p className="text-xs font-medium text-red-700 mb-1">🚨 위험 품목 수</p>
-                      <p className="text-2xl font-bold text-red-800">
-                        {safetyStockKpiData?.danger_count != null ? safetyStockKpiData.danger_count.toLocaleString() : '—'}
-                      </p>
-                    </div>
-                  </div>
-
                   {/* 과잉 재고 TOP 5 (수량 기준): 현재/목표 비교·절감 가능 금액·프로그레스 바 */}
                   {overstockTop5ByQty.length > 0 && (
                     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
