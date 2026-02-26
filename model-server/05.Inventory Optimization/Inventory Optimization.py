@@ -153,6 +153,33 @@ def run_inventory_pipeline(df: pd.DataFrame) -> pd.DataFrame:
         return df
     df = df.copy()
 
+    # 1) dashboard_sales_data.sql 처럼 Inventory / Safety_Stock / Status 가 이미 계산되어 있는 경우
+    has_precomputed = all(c in df.columns for c in ["Inventory", "Safety_Stock", "Status"])
+    if has_precomputed:
+        # 타입 정리 (음수는 0 이상으로 클리핑)
+        df["Inventory"] = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0).clip(lower=0).astype(int)
+        df["Safety_Stock"] = pd.to_numeric(df["Safety_Stock"], errors="coerce").fillna(0).clip(lower=0).astype(int)
+        # Status 는 문자열로만 정리
+        df["Status"] = df["Status"].astype(str)
+
+        # Frozen_Money 이 없거나 NaN 이 많을 경우 price·quantity·Inventory 기반으로 재계산
+        if "price" in df.columns:
+            price = pd.to_numeric(df["price"], errors="coerce").fillna(0)
+            qty = pd.to_numeric(df.get("quantity", 0), errors="coerce").fillna(0)
+            fm = ((df["Inventory"] - qty) * price).clip(lower=0)
+            if "Frozen_Money" not in df.columns:
+                df["Frozen_Money"] = fm
+            else:
+                # 기존 값이 숫자가 아니면 대체
+                cur = pd.to_numeric(df["Frozen_Money"], errors="coerce")
+                df["Frozen_Money"] = cur.fillna(fm)
+        else:
+            if "Frozen_Money" not in df.columns:
+                df["Frozen_Money"] = 0
+
+        return df
+
+    # 2) 원본 SQL/CSV(01.data 등) 처럼 재고 정보가 사전 계산되어 있지 않은 경우 → 기존 시뮬레이션 파이프라인 사용
     # 기존 분석 컬럼 제거
     cols_to_remove = [
         "Inventory",
