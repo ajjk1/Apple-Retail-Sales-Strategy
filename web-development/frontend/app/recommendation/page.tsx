@@ -268,6 +268,8 @@ export default function RecommendationPage() {
   const [selectedFunnelStage, setSelectedFunnelStage] = useState<string>('Add_to_Cart');
   /** 4대 엔진 중 클릭한 엔진 — 해당 엔진 추천 결과를 대시보드에 표시 */
   const [selectedEngineKey, setSelectedEngineKey] = useState<'association' | 'similar_store' | 'latent_demand' | 'trend' | null>(null);
+  /** 실시간 재고·자금 동결 테이블: 투자자 경고 필터 (전체 / 경고만 / 경고 제외) */
+  const [investorWarningFilter, setInvestorWarningFilter] = useState<'all' | 'alert' | 'no_alert'>('all');
 
   // [4.3.2] 추천 상품 목록: userPersonalizedRec.top_3 또는 collabFilterRec.top_recommendations
   const feedbackProductList = useMemo(() => {
@@ -587,7 +589,21 @@ export default function RecommendationPage() {
     return m;
   }, [stores]);
 
-  // 실시간 재고·자금 동결 테이블용: 안전재고 대시보드 데이터 + 투자자 경고(75% 분위 이상 Frozen_Money & Status 정상)
+  // 상점명 → store_id (실시간 재고 테이블에서 상점 클릭 시 4-Engine 연동용)
+  const storeNameToStoreId = useMemo(() => {
+    const m = new Map<string, string>();
+    stores.forEach((s) => {
+      const id = s.store_id ?? '';
+      if (id && s.store_name) {
+        m.set(s.store_name.trim(), id);
+        const stripped = stripApplePrefix(s.store_name);
+        if (stripped) m.set(stripped, id);
+      }
+    });
+    return m;
+  }, [stores]);
+
+  // 실시간 재고·자금 동결 테이블: 투자자 경고 필터 적용 목록
   const inventoryFrozenTableItems = useMemo(() => {
     if (!inventoryListAll.length) return [];
     const frozenVals = inventoryListAll.map((r) => Number(r.Frozen_Money) || 0).filter((v) => v >= 0);
@@ -602,6 +618,15 @@ export default function RecommendationPage() {
       return { ...row, investor_alert };
     });
   }, [inventoryListAll]);
+
+  // 투자자 경고 필터 적용된 테이블 목록
+  const filteredInventoryFrozenTableItems = useMemo(() => {
+    if (investorWarningFilter === 'all') return inventoryFrozenTableItems;
+    return inventoryFrozenTableItems.filter((row) => {
+      const alert = (row as { investor_alert?: boolean }).investor_alert;
+      return investorWarningFilter === 'alert' ? alert : !alert;
+    });
+  }, [inventoryFrozenTableItems, investorWarningFilter]);
 
   return (
     <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
@@ -646,7 +671,22 @@ export default function RecommendationPage() {
             {/* 안전재고 대시보드와 동일 데이터 (safety-stock-inventory-list API) */}
             {inventoryFrozenTableItems.length > 0 && (
               <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
-                <p className="text-xs text-[#86868b] mb-2">아래 표: 안전재고 대시보드(safety-stock-inventory-list) 동일 데이터</p>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <p className="text-xs text-[#86868b]">아래 표: 안전재고 대시보드(safety-stock-inventory-list) 동일 데이터 · <span className="text-[#0071e3]">상점명을 클릭하면 해당 상점의 맞춤형 추천 엔진(4-Engine)으로 연동됩니다.</span></p>
+                  <label className="flex items-center gap-2 text-xs text-[#6e6e73]">
+                    <span>투자자 경고 필터:</span>
+                    <select
+                      value={investorWarningFilter}
+                      onChange={(e) => setInvestorWarningFilter(e.target.value as 'all' | 'alert' | 'no_alert')}
+                      className="border border-gray-200 rounded px-2 py-1 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3]"
+                    >
+                      <option value="all">전체</option>
+                      <option value="alert">경고만</option>
+                      <option value="no_alert">경고 제외</option>
+                    </select>
+                    <span className="text-[#86868b]">({filteredInventoryFrozenTableItems.length}건)</span>
+                  </label>
+                </div>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
                     <tr className="text-left text-[#6e6e73]">
@@ -661,7 +701,7 @@ export default function RecommendationPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {inventoryFrozenTableItems.map((row, i) => {
+                    {filteredInventoryFrozenTableItems.map((row, i) => {
                       const storeName = row.Store_Name ?? '';
                       const stripped = stripApplePrefix(storeName);
                       const countryEn = storeNameToCountry.get(stripped) ?? storeNameToCountry.get(storeName.trim()) ?? '';
@@ -673,7 +713,25 @@ export default function RecommendationPage() {
                           className={`border-b border-gray-100 ${investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
                         >
                           <td className="py-2 text-[#1d1d1f]">{countryDisplay}</td>
-                          <td className="py-2 text-[#1d1d1f]">{storeName ? formatStoreDisplay(stripped) : '-'}</td>
+                          <td className="py-2 text-[#1d1d1f]">
+                            {storeName ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const storeId = storeNameToStoreId.get(storeName.trim()) ?? storeNameToStoreId.get(stripped);
+                                  if (storeId) {
+                                    setSelectedStoreId(storeId);
+                                    document.getElementById('recommendation-engine-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }
+                                }}
+                                className="text-left font-medium text-[#0071e3] hover:underline cursor-pointer"
+                              >
+                                {formatStoreDisplay(stripped)}
+                              </button>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
                           <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
                           <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
                           <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
@@ -696,12 +754,12 @@ export default function RecommendationPage() {
           </div>
         )}
 
-        {/* 2. 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy) — 클릭 시 해당 엔진 추천 결과 표시 */}
+        {/* 2. 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy) — 클릭 시 해당 엔진 추천 결과 표시 (실시간 재고 테이블 상점명 클릭 시 연동) */}
         {recommendations && (recommendations.association?.length > 0 || recommendations.similar_store?.length > 0 || recommendations.latent_demand?.length > 0 || recommendations.trend?.length > 0) && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
+          <div id="recommendation-engine-section" className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
             <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">⚙️ 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy)</h2>
             <p className="text-sm text-[#6e6e73] mb-4">
-              상점의 특성에 따라 가장 효율적인 무기를 골라 사용합니다. CTO 설계 4대 엔진이 이 상점에서 어떻게 작동하는지 확인하세요. <strong>엔진 카드를 클릭하면 해당 추천 결과가 아래에 표시됩니다.</strong>
+              상점의 특성에 따라 가장 효율적인 무기를 골라 사용합니다. CTO 설계 4대 엔진이 이 상점에서 어떻게 작동하는지 확인하세요. <strong>엔진 카드를 클릭하면 해당 추천 결과가 아래에 표시되고, 📊 성과 시뮬레이터 카드로 자동 이동합니다.</strong>
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {(() => {
@@ -727,7 +785,10 @@ export default function RecommendationPage() {
                     <button
                       key={e.key}
                       type="button"
-                      onClick={() => setSelectedEngineKey(e.key)}
+                      onClick={() => {
+                        setSelectedEngineKey(e.key);
+                        document.getElementById('performance-simulator-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }}
                       className={`rounded-xl border-2 p-4 text-left w-full cursor-pointer transition-colors hover:border-[#0071e3] hover:bg-blue-50/50 ${
                         isSelected ? 'border-[#0071e3] bg-blue-50 ring-2 ring-[#0071e3]/30' : isLeading ? 'border-[#0071e3] bg-blue-50' : 'border-gray-200 bg-gray-50'
                       }`}
@@ -838,11 +899,19 @@ export default function RecommendationPage() {
           </div>
         )}
 
-        {/* 성과 시뮬레이터 — 투자자용 실효성 증명 (Scenario / ROI / Visual Summary) */}
+        {/* 성과 시뮬레이터 — 투자자용 실효성 증명 (4-Engine 클릭 시 연동·시각화) */}
         {performanceSimulator && (
-          <div className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
+          <div id="performance-simulator-section" className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
             <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">📊 성과 시뮬레이터</h2>
-            <p className="text-xs text-[#6e6e73] mb-4">엔진 적용 전·후 매출·재고 비교 · 기회비용 절감 · 실효성 지표</p>
+            <p className="text-xs text-[#6e6e73] mb-2">엔진 적용 전·후 매출·재고 비교 · 기회비용 절감 · 실효성 지표</p>
+            {selectedEngineKey && (
+              <p className="text-sm text-[#0071e3] font-medium mb-4">
+                연동된 엔진: {selectedEngineKey === 'association' && 'Association Engine'}
+                {selectedEngineKey === 'similar_store' && 'Similar Store'}
+                {selectedEngineKey === 'latent_demand' && 'Latent Demand'}
+                {selectedEngineKey === 'trend' && 'Trend'}
+              </p>
+            )}
 
             {performanceSimulator.investor_message && (
               <div className="mb-6 p-4 rounded-xl bg-[#1d1d1f] text-white text-sm leading-relaxed border-l-4 border-[#0071e3]">
@@ -977,49 +1046,6 @@ export default function RecommendationPage() {
                 </div>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* [4.1.1] 유저(상점) 기반 협업 필터링 및 재고 가중치 결합 */}
-        {selectedStoreId && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
-            <h2 className="text-base font-semibold text-[#1d1d1f] mb-2">[4.1.1] 유저 기반 협업 필터링 및 재고 가중치 결합</h2>
-            <p className="text-sm text-[#6e6e73] mb-4">
-              유사 상점(코사인 유사도 상위 5곳) 구매 패턴 평균(base_score) × 재고 가산(Health_Index≥120 과잉 재고 품목 20% 가산) → 최종 추천 상위 3선
-            </p>
-            {storeLoading ? (
-              <p className="text-sm text-[#6e6e73] py-4">추천 계산 중...</p>
-            ) : collabFilterRec?.top_recommendations?.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left border-b border-gray-200 text-[#6e6e73]">
-                      <th className="py-2 pr-4">순위</th>
-                      <th className="py-2 pr-4">제품명</th>
-                      <th className="py-2 text-right">base_score</th>
-                      <th className="py-2 text-right">boost</th>
-                      <th className="py-2 text-right">final_score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {collabFilterRec.top_recommendations.map((row, i) => (
-                      <tr key={i} className="border-b border-gray-100">
-                        <td className="py-2 text-[#1d1d1f]">{i + 1}</td>
-                        <td className="py-2 text-[#1d1d1f]">{row.product_name}</td>
-                        <td className="py-2 text-right font-mono text-[#1d1d1f]">{row.base_score}</td>
-                        <td className="py-2 text-right font-mono text-[#1d1d1f]">{row.boost}</td>
-                        <td className="py-2 text-right font-medium text-[#1d1d1f]">{row.final_score}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {collabFilterRec.target_store && (
-                  <p className="text-xs text-[#86868b] mt-2">대상 상점: {collabFilterRec.target_store}</p>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-[#86868b] py-2">추천 결과가 없습니다. (유사 상점·재고 데이터 확인)</p>
-            )}
           </div>
         )}
 
