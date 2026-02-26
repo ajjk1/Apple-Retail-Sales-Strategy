@@ -488,9 +488,9 @@ export default function Home() {
     predicted_demand?: number;
     expected_revenue?: number;
   } | null>(null);
-  /** Inventory Action Center: 재고 목록 (매장별). Store_Name, Inventory, Safety_Stock, Status(위험/과잉/정상), Frozen_Money */
+  /** Inventory Action Center: 재고 목록 (매장별). Store_Name, Inventory, Safety_Stock, Status(위험/과잉/정상), Frozen_Money, price(선택) */
   const [safetyStockInventoryList, setSafetyStockInventoryList] = useState<
-    { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number }[]
+    { Store_Name: string; Inventory: number; Safety_Stock: number; Status: string; Frozen_Money: number; price?: number }[]
   >([]);
   const [safetyStockInventoryListLoading, setSafetyStockInventoryListLoading] = useState(false);
   /** 과잉 재고 현황 카드: 대륙·국가·상점 구분, 카테고리별 순 (API 전용) */
@@ -582,6 +582,7 @@ export default function Home() {
     }
     return (overstockTop5Fallback ?? []).map((r) => ({ ...r, shortName: r.name, category: '' }));
   }, [overstockStatusByRegion, overstockTop5Fallback, overstockFilterContinent, overstockFilterCountry, overstockFilterStore]);
+  /** 위험 품목 Top 5: 매장·제품별 current, needed, expenditure(예상 발주 비용). 차트용 금액·수량 데이터 */
   const dangerTop5 = useMemo(
     () =>
       (safetyStockInventoryList ?? [])
@@ -592,11 +593,13 @@ export default function Home() {
           const safety = Number(row.Safety_Stock) || 0;
           const needed = safety - inventory;
           const status = (row.Status ?? '').trim();
+          const price = Number((row as { price?: number }).price) || 0;
           return {
             name: displayName,
             store_name: rawName,
             current: inventory > 0 ? inventory : 0,
             needed: needed > 0 ? needed : 0,
+            expenditure: (needed > 0 ? needed : 0) * price,
             status,
           };
         })
@@ -1863,40 +1866,47 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 위험 품목: 과잉 재고 TOP 5와 동일한 카드·라이트 테마 (제목·설명·배지 + 스택 막대 차트) */}
+                  {/* 위험 품목: 과잉 재고 현황과 동일 형식 — 좌 Y축 금액(막대), 우 Y축 수량(스캐터 라인) */}
                   {dangerTop5.length > 0 && (
                     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div>
                           <h3 className="text-sm font-semibold text-[#1d1d1f]">위험 품목</h3>
                           <p className="text-xs text-[#86868b] mt-0.5">
-                            위험 품목 재고량 기준 Top 5 매장을 대상으로, 현재고(남색)와 목표 안전 재고까지 필요한 발주량(빨강)을 스택 막대로 표시합니다.
+                            위험 품목 재고량 기준 Top 5 매장·제품. 막대는 예상 발주 비용(금액), 선·점은 필요 발주량(수량)입니다.
                           </p>
                         </div>
                         <span className="text-[10px] px-2 py-1 rounded bg-gray-100 text-[#6e6e73] border border-gray-200">기준: 실데이터</span>
                       </div>
                       <div className="w-full h-64">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={dangerTop5}
-                            margin={{ top: 8, right: 24, left: 8, bottom: 24 }}
-                          >
+                          <ComposedChart data={dangerTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                             <XAxis
                               dataKey="name"
-                              tick={{ fontSize: 11 }}
+                              tick={{ fontSize: 10 }}
                               interval={0}
-                              tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                              angle={-12}
+                              textAnchor="end"
+                              tickFormatter={(v: string) => (v && v.length > 10 ? `${v.slice(0, 10)}…` : v)}
                             />
                             <YAxis
+                              yAxisId="left"
+                              tick={{ fontSize: 11 }}
+                              stroke="#6e6e73"
+                              tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
+                            />
+                            <YAxis
+                              yAxisId="right"
+                              orientation="right"
                               tick={{ fontSize: 11 }}
                               stroke="#6e6e73"
                               tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}${QUANTITY_UNIT}`}
                             />
                             <Tooltip
                               formatter={(value: number, name: string) => {
-                                if (name === 'current') {
-                                  return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '현재 재고'];
+                                if (name === 'expenditure') {
+                                  return [`₩${(Number(value) || 0).toLocaleString()}`, '예상 발주 비용'];
                                 }
                                 if (name === 'needed') {
                                   return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '필요 발주량'];
@@ -1905,21 +1915,32 @@ export default function Home() {
                               }}
                               labelFormatter={(label) => `매장: ${label}`}
                             />
-                            <Bar
-                              dataKey="current"
-                              stackId="danger"
-                              name="current"
-                              fill="#1d4ed8"
-                              radius={[4, 4, 0, 0]}
-                            />
-                            <Bar
+                            <Bar yAxisId="left" dataKey="expenditure" radius={[4, 4, 0, 0]} name="expenditure">
+                              {dangerTop5.map((_, index) => (
+                                <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                              ))}
+                            </Bar>
+                            <Line
+                              yAxisId="right"
+                              type="monotone"
                               dataKey="needed"
-                              stackId="danger"
-                              name="needed"
-                              fill="#dc2626"
-                              radius={[0, 0, 4, 4]}
+                              stroke="#111827"
+                              strokeWidth={2}
+                              dot={(props) => {
+                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                if (cx == null || cy == null) return null;
+                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
+                              }}
+                              activeDot={(props) => {
+                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
+                                if (cx == null || cy == null) return null;
+                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
+                                return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
+                              }}
+                              name="필요 발주량"
                             />
-                          </BarChart>
+                          </ComposedChart>
                         </ResponsiveContainer>
                       </div>
                     </div>
