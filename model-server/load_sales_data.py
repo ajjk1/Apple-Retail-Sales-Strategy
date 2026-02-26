@@ -278,6 +278,19 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
+    # dashboard_sales_data.sql 컬럼명 호환 (PascalCase → 소문자 별칭, store_stock_quantity는 Inventory로 채움)
+    if "store_stock_quantity" not in df.columns and "Inventory" in df.columns:
+        df["store_stock_quantity"] = pd.to_numeric(df["Inventory"], errors="coerce").fillna(0).astype(int)
+    if "Stock_quantity" in df.columns and "store_stock_quantity" not in df.columns:
+        df["store_stock_quantity"] = pd.to_numeric(df["Stock_quantity"], errors="coerce").fillna(0).astype(int)
+    for sql_col, low_col in [("Inventory", "inventory"), ("Frozen_Money", "frozen_money"), ("Safety_Stock", "safety_stock"), ("Status", "status")]:
+        if sql_col in df.columns and low_col not in df.columns:
+            if sql_col == "Status":
+                df[low_col] = df[sql_col].astype(str)
+            elif sql_col == "Frozen_Money":
+                df[low_col] = pd.to_numeric(df[sql_col], errors="coerce").fillna(0)
+            else:
+                df[low_col] = pd.to_numeric(df[sql_col], errors="coerce").fillna(0).astype(int)
     # SQL INSERT에 없을 수 있음: quantity 기준 95%~130% 랜덤으로 Store stock quantity 생성
     if "store_stock_quantity" not in df.columns and "quantity" in df.columns:
         q = pd.to_numeric(df["quantity"], errors="coerce").fillna(0)
