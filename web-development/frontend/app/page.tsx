@@ -270,7 +270,7 @@ function StoreInventoryTooltip({
         </div>
         <div>
           <span className="font-medium">묶여있는 자금(Frozen Money):</span>{' '}
-          <span className="font-semibold">₩{frozen.toLocaleString()}</span>
+          <span className="font-semibold">${frozen.toLocaleString('en-US')}</span>
         </div>
         <div className="pt-1 text-[11px] text-[#6e6e73] leading-snug">
           {isOverstock
@@ -582,13 +582,14 @@ export default function Home() {
     }
     return (overstockTop5Fallback ?? []).map((r) => ({ ...r, shortName: r.name, category: '' }));
   }, [overstockStatusByRegion, overstockTop5Fallback, overstockFilterContinent, overstockFilterCountry, overstockFilterStore]);
-  /** 위험 품목 Top 5: 매장·제품별 current, needed, expenditure(예상 발주 비용). 차트용 금액·수량 데이터 */
+  /** 위험 품목 Top 5: 매장·제품별 current, target, needed, expenditure. 테이블·차트용 */
   const dangerTop5 = useMemo(
     () =>
       (safetyStockInventoryList ?? [])
         .map((row) => {
           const rawName = (row.Store_Name ?? '').trim() || '—';
           const displayName = stripApplePrefix(rawName);
+          const productName = (row as { Product_Name?: string }).Product_Name ?? '';
           const inventory = Number(row.Inventory) || 0;
           const safety = Number(row.Safety_Stock) || 0;
           const needed = safety - inventory;
@@ -597,7 +598,9 @@ export default function Home() {
           return {
             name: displayName,
             store_name: rawName,
+            product_name: productName || displayName,
             current: inventory > 0 ? inventory : 0,
+            target: safety,
             needed: needed > 0 ? needed : 0,
             expenditure: (needed > 0 ? needed : 0) * price,
             status,
@@ -1723,7 +1726,7 @@ export default function Home() {
                                     </span>
                                   </td>
                                   <td className="py-3 pl-3 text-right text-amber-700 font-medium">
-                                    ₩{savings.toLocaleString()}
+                                    ${savings.toLocaleString('en-US')}
                                   </td>
                                 </tr>
                               );
@@ -1742,7 +1745,7 @@ export default function Home() {
                           <div>
                             <h3 className="text-sm font-semibold text-[#1d1d1f]">과잉 재고 현황</h3>
                             <p className="text-xs text-[#86868b] mt-0.5">
-                              대륙별·국가별·상점별 구분, 카테고리별 순으로 Frozen Money(₩)와 과잉 재고 수량(대)을 표시합니다.
+                              대륙별·국가별·상점별 구분, 카테고리별 순으로 Frozen Money($, 세 자리마다 , 구분)와 과잉 재고 수량(대)을 표시합니다.
                             </p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -1807,7 +1810,7 @@ export default function Home() {
                                 yAxisId="left"
                                 tick={{ fontSize: 11 }}
                                 stroke="#6e6e73"
-                                tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
+                                tickFormatter={(v) => `$${(Number(v) || 0).toLocaleString('en-US')}`}
                               />
                               <YAxis
                                 yAxisId="right"
@@ -1819,7 +1822,7 @@ export default function Home() {
                               <Tooltip
                                 formatter={(value: number, name: string, props: { payload?: { category?: string } }) => {
                                   if (name === 'frozen') {
-                                    return [`₩${(Number(value) || 0).toLocaleString()}`, 'Frozen Money'];
+                                    return [`$${(Number(value) || 0).toLocaleString('en-US')}`, 'Frozen Money'];
                                   }
                                   if (name === 'overstock_qty') {
                                     return [`${(Number(value) || 0).toLocaleString()}대`, '과잉 재고 수량'];
@@ -1866,82 +1869,73 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 위험 품목: 과잉 재고 현황과 동일 형식 — 좌 Y축 금액(막대), 우 Y축 수량(스캐터 라인) */}
+                  {/* 위험 품목: 과잉 재고 TOP 5(수량 기준)와 동일 테이블 스타일 — 순위·상품명·프로그레스 바·현재/목표·발주량·지출 금액 */}
                   {dangerTop5.length > 0 && (
                     <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
                       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                         <div>
                           <h3 className="text-sm font-semibold text-[#1d1d1f]">위험 품목</h3>
                           <p className="text-xs text-[#86868b] mt-0.5">
-                            위험 품목 재고량 기준 Top 5 매장·제품. 막대는 예상 발주 비용(금액), 선·점은 필요 발주량(수량)입니다.
+                            현재 재고가 목표(안전 재고)보다 낮은 매장·제품 Top 5. 필요한 발주량과 예상 발주 비용을 보여줍니다.
                           </p>
                         </div>
                         <span className="text-[10px] px-2 py-1 rounded bg-gray-100 text-[#6e6e73] border border-gray-200">기준: 실데이터</span>
                       </div>
-                      <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <ComposedChart data={dangerTop5} margin={{ top: 8, right: 24, left: 8, bottom: 24 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
-                            <XAxis
-                              dataKey="name"
-                              tick={{ fontSize: 10 }}
-                              interval={0}
-                              angle={-12}
-                              textAnchor="end"
-                              tickFormatter={(v: string) => (v && v.length > 10 ? `${v.slice(0, 10)}…` : v)}
-                            />
-                            <YAxis
-                              yAxisId="left"
-                              tick={{ fontSize: 11 }}
-                              stroke="#6e6e73"
-                              tickFormatter={(v) => `₩${(Number(v) || 0).toLocaleString()}`}
-                            />
-                            <YAxis
-                              yAxisId="right"
-                              orientation="right"
-                              tick={{ fontSize: 11 }}
-                              stroke="#6e6e73"
-                              tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}${QUANTITY_UNIT}`}
-                            />
-                            <Tooltip
-                              formatter={(value: number, name: string) => {
-                                if (name === 'expenditure') {
-                                  return [`₩${(Number(value) || 0).toLocaleString()}`, '예상 발주 비용'];
-                                }
-                                if (name === 'needed') {
-                                  return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '필요 발주량'];
-                                }
-                                return [value, name];
-                              }}
-                              labelFormatter={(label) => `매장: ${label}`}
-                            />
-                            <Bar yAxisId="left" dataKey="expenditure" radius={[4, 4, 0, 0]} name="expenditure">
-                              {dangerTop5.map((_, index) => (
-                                <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                              ))}
-                            </Bar>
-                            <Line
-                              yAxisId="right"
-                              type="monotone"
-                              dataKey="needed"
-                              stroke="#111827"
-                              strokeWidth={2}
-                              dot={(props) => {
-                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
-                                if (cx == null || cy == null) return null;
-                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
-                                return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#ffffff" strokeWidth={2} />;
-                              }}
-                              activeDot={(props) => {
-                                const { cx, cy, index } = props as { cx?: number; cy?: number; index?: number };
-                                if (cx == null || cy == null) return null;
-                                const color = PIE_COLORS[(index ?? 0) % PIE_COLORS.length];
-                                return <circle cx={cx} cy={cy} r={6} fill={color} stroke="#111827" strokeWidth={2} />;
-                              }}
-                              name="필요 발주량"
-                            />
-                          </ComposedChart>
-                        </ResponsiveContainer>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-[#6e6e73]">
+                              <th className="py-2 pr-3 font-medium w-12">순위</th>
+                              <th className="py-2 pr-3 font-medium">상품명</th>
+                              <th className="py-2 pr-3 font-medium text-right">현재 재고</th>
+                              <th className="py-2 pr-3 font-medium text-right">목표 재고</th>
+                              <th className="py-2 pr-3 font-medium text-right">발주량</th>
+                              <th className="py-2 pl-3 font-medium text-right">예상 발주 비용</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dangerTop5.map((row, idx) => {
+                              const rank = idx + 1;
+                              const current = row.current;
+                              const target = row.target;
+                              const needQty = row.needed;
+                              const needPct = target > 0 ? (needQty / target) * 100 : 0;
+                              const currentPct = target > 0 ? (current / target) * 100 : 0;
+                              return (
+                                <tr key={rank} className="border-b border-gray-100 hover:bg-gray-50/50">
+                                  <td className="py-3 pr-3 text-[#1d1d1f] font-medium">{rank}</td>
+                                  <td className="py-3 pr-3">
+                                    <div>
+                                      <span className="text-[#1d1d1f] font-medium">{row.product_name || row.name || '—'}</span>
+                                      <div className="mt-1.5 w-full max-w-xs h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                                        <div
+                                          className="h-full bg-[#34c759] shrink-0"
+                                          style={{ width: `${Math.min(currentPct, 100)}%` }}
+                                          title="현재 재고"
+                                        />
+                                        <div
+                                          className="h-full bg-[#dc2626] shrink-0"
+                                          style={{ width: `${Math.min(needPct, 100)}%` }}
+                                          title="필요 발주량"
+                                        />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{current.toLocaleString()}</td>
+                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{target.toLocaleString()}</td>
+                                  <td className="py-3 pr-3 text-right">
+                                    <span className="text-red-700 font-medium">
+                                      {needQty.toLocaleString()} ({needPct.toFixed(1)}%)
+                                    </span>
+                                  </td>
+                                  <td className="py-3 pl-3 text-right text-red-700 font-medium">
+                                    ${(row.expenditure ?? 0).toLocaleString('en-US')}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )}

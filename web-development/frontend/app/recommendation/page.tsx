@@ -71,6 +71,15 @@ interface PerformanceSimulatorData {
   investor_message?: string;
 }
 
+/** 재고 Status API값 → 한글(영문) 표시 (실시간 재고·자금 동결 테이블용) */
+function inventoryStatusToDisplay(apiStatus: string): string {
+  const s = (apiStatus ?? '').trim();
+  if (s === 'Danger' || s === '위험') return '위험 품목 (Danger)';
+  if (s === 'Overstock' || s === '과잉') return '과잉 재고 (Overstock)';
+  if (s === 'Normal' || s === '정상') return '정상 재고 (Normal)';
+  return s || '-';
+}
+
 /** 실시간 재고 및 자금 동결 현황 (투자자용) — Frozen Money + Status → investor_alert */
 interface InventoryFrozenMoneyData {
   items: (OverstockItem & { investor_alert?: boolean })[];
@@ -254,8 +263,11 @@ export default function RecommendationPage() {
   const [customerJourneyFunnel, setCustomerJourneyFunnel] = useState<CustomerJourneyFunnelData | null>(null);
   const [funnelStageWeights, setFunnelStageWeights] = useState<FunnelStageWeightData | null>(null);
   const [performanceSimulator, setPerformanceSimulator] = useState<PerformanceSimulatorData | null>(null);
-  const [inventoryFrozenMoney, setInventoryFrozenMoney] = useState<InventoryFrozenMoneyData | null>(null);
+  /** 실시간 재고·자금 동결: 안전재고 대시보드와 동일 데이터(safety-stock-inventory-list) */
+  const [inventoryListAll, setInventoryListAll] = useState<OverstockItem[]>([]);
   const [selectedFunnelStage, setSelectedFunnelStage] = useState<string>('Add_to_Cart');
+  /** 4대 엔진 중 클릭한 엔진 — 해당 엔진 추천 결과를 대시보드에 표시 */
+  const [selectedEngineKey, setSelectedEngineKey] = useState<'association' | 'similar_store' | 'latent_demand' | 'trend' | null>(null);
 
   // [4.3.2] 추천 상품 목록: userPersonalizedRec.top_3 또는 collabFilterRec.top_recommendations
   const feedbackProductList = useMemo(() => {
@@ -449,11 +461,11 @@ export default function RecommendationPage() {
       .catch(() => setCriticalAlerts(null));
   }, []);
 
-  // 실시간 재고 및 자금 동결 현황 (투자자용 — Frozen Money + Status → 붉은색 경고)
+  // 실시간 재고 및 자금 동결 현황: 안전재고 대시보드와 동일 API(safety-stock-inventory-list) + 매출 대시보드(sales-summary) 데이터로 작성
   useEffect(() => {
-    apiGet<InventoryFrozenMoneyData>('/api/inventory-frozen-money')
-      .then((data) => data && setInventoryFrozenMoney(data))
-      .catch(() => setInventoryFrozenMoney(null));
+    apiGet<OverstockItem[]>('/api/safety-stock-inventory-list')
+      .then((data) => setInventoryListAll(Array.isArray(data) ? data : []))
+      .catch(() => setInventoryListAll([]));
   }, []);
 
   // [4.4.1] 고객 여정 퍼널 분석
@@ -575,6 +587,22 @@ export default function RecommendationPage() {
     return m;
   }, [stores]);
 
+  // 실시간 재고·자금 동결 테이블용: 안전재고 대시보드 데이터 + 투자자 경고(75% 분위 이상 Frozen_Money & Status 정상)
+  const inventoryFrozenTableItems = useMemo(() => {
+    if (!inventoryListAll.length) return [];
+    const frozenVals = inventoryListAll.map((r) => Number(r.Frozen_Money) || 0).filter((v) => v >= 0);
+    const sorted = [...frozenVals].sort((a, b) => a - b);
+    const threshold = sorted.length
+      ? sorted[Math.min(Math.floor(sorted.length * 0.75), sorted.length - 1)] ?? 0
+      : 0;
+    return inventoryListAll.map((row) => {
+      const fm = Number(row.Frozen_Money) || 0;
+      const st = String(row.Status ?? '').trim();
+      const investor_alert = fm >= threshold && (st === '정상' || st === 'Normal');
+      return { ...row, investor_alert };
+    });
+  }, [inventoryListAll]);
+
   return (
     <main className="min-h-screen bg-[#f5f5f7] text-[#1d1d1f]">
       <header className="bg-white border-b border-gray-200">
@@ -599,67 +627,81 @@ export default function RecommendationPage() {
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* 1. 실시간 재고 및 자금 동결 현황 (Inventory vs Frozen Money) — 투자자 모드 경고 */}
-        {inventoryFrozenMoney && (
+        {/* 1. 실시간 재고 및 자금 동결 현황 — 매출 대시보드·안전재고 대시보드 데이터로 작성 */}
+        {(inventoryFrozenTableItems.length > 0 || salesSummary) && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
             <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">💰 실시간 재고 및 자금 동결 현황 (Inventory vs Frozen Money)</h2>
-            <p className="text-sm text-[#6e6e73] mb-4">
-              {inventoryFrozenMoney.investor_value_message ?? '어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다.'}
+            <p className="text-sm text-[#6e6e73] mb-2">
+              어떤 제품에 얼마의 돈이 묶여 있는지 실시간으로 추적하여 즉시 현금화 전략을 짭니다.
             </p>
-            <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
-                  <tr className="text-left text-[#6e6e73]">
-                    <th className="py-2 pr-3">국가</th>
-                    <th className="py-2 pr-3">상점 명</th>
-                    <th className="py-2 pr-3">제품 명</th>
-                    <th className="py-2 pr-3 text-right">재고</th>
-                    <th className="py-2 pr-3 text-right">안전재고</th>
-                    <th className="py-2 pr-3 text-right">자금동결 ($)</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2">투자자 경고</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventoryFrozenMoney.items.map((row, i) => {
-                    const storeName = row.Store_Name ?? '';
-                    const stripped = stripApplePrefix(storeName);
-                    const countryEn = storeNameToCountry.get(stripped) ?? storeNameToCountry.get(storeName.trim()) ?? '';
-                    const countryDisplay = countryEn ? formatCountryDisplay(countryEn) : '-';
-                    return (
-                      <tr
-                        key={i}
-                        className={`border-b border-gray-100 ${(row as { investor_alert?: boolean }).investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
-                      >
-                        <td className="py-2 text-[#1d1d1f]">{countryDisplay}</td>
-                        <td className="py-2 text-[#1d1d1f]">{storeName ? formatStoreDisplay(stripped) : '-'}</td>
-                        <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
-                        <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
-                        <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
-                        <td className="py-2 text-right font-medium text-[#1d1d1f]">${Number(row.Frozen_Money).toLocaleString()}</td>
-                        <td className="py-2 text-[#1d1d1f]">{row.Status ?? '-'}</td>
-                        <td className="py-2">
-                          {(row as { investor_alert?: boolean }).investor_alert ? (
-                            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900">투자자 모드 가동 필요</span>
-                          ) : (
-                            <span className="text-[#86868b]">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            {/* 매출 대시보드 요약 (sales-summary API) */}
+            {salesSummary && (
+              <div className="mb-4 p-3 rounded-lg bg-[#f5f5f7] border border-gray-200 text-sm text-[#1d1d1f]">
+                <span className="font-semibold">매출 대시보드 요약:</span>{' '}
+                총 매출 ₩{(Number(salesSummary.total_sum) || 0).toLocaleString()}
+                {salesSummary.store_count != null && ` · 상점 수 ${salesSummary.store_count}개`}
+                {salesSummary.predicted_sales_2025 != null && ` · 2025 예상 매출 ₩${Number(salesSummary.predicted_sales_2025).toLocaleString()}`}
+              </div>
+            )}
+            {/* 안전재고 대시보드와 동일 데이터 (safety-stock-inventory-list API) */}
+            {inventoryFrozenTableItems.length > 0 && (
+              <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                <p className="text-xs text-[#86868b] mb-2">아래 표: 안전재고 대시보드(safety-stock-inventory-list) 동일 데이터</p>
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                    <tr className="text-left text-[#6e6e73]">
+                      <th className="py-2 pr-3">국가</th>
+                      <th className="py-2 pr-3">상점 명</th>
+                      <th className="py-2 pr-3">제품 명</th>
+                      <th className="py-2 pr-3 text-right">재고</th>
+                      <th className="py-2 pr-3 text-right">안전재고</th>
+                      <th className="py-2 pr-3 text-right">자금동결 ($)</th>
+                      <th className="py-2 pr-3">Status</th>
+                      <th className="py-2">투자자 경고</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventoryFrozenTableItems.map((row, i) => {
+                      const storeName = row.Store_Name ?? '';
+                      const stripped = stripApplePrefix(storeName);
+                      const countryEn = storeNameToCountry.get(stripped) ?? storeNameToCountry.get(storeName.trim()) ?? '';
+                      const countryDisplay = countryEn ? formatCountryDisplay(countryEn) : '-';
+                      const investor_alert = (row as { investor_alert?: boolean }).investor_alert;
+                      return (
+                        <tr
+                          key={i}
+                          className={`border-b border-gray-100 ${investor_alert ? 'bg-red-50 border-l-4 border-l-red-500' : ''}`}
+                        >
+                          <td className="py-2 text-[#1d1d1f]">{countryDisplay}</td>
+                          <td className="py-2 text-[#1d1d1f]">{storeName ? formatStoreDisplay(stripped) : '-'}</td>
+                          <td className="py-2 text-[#1d1d1f]">{row.Product_Name ?? '-'}</td>
+                          <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Inventory).toLocaleString()}</td>
+                          <td className="py-2 text-right text-[#1d1d1f]">{Number(row.Safety_Stock).toLocaleString()}</td>
+                          <td className="py-2 text-right font-medium text-[#1d1d1f]">${Number(row.Frozen_Money).toLocaleString('en-US')}</td>
+                          <td className="py-2 text-[#1d1d1f]">{inventoryStatusToDisplay(row.Status ?? '')}</td>
+                          <td className="py-2">
+                            {investor_alert ? (
+                              <span className="px-2 py-0.5 rounded text-xs font-semibold bg-red-200 text-red-900">투자자 모드 가동 필요</span>
+                            ) : (
+                              <span className="text-[#86868b]">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
-        {/* 2. 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy) */}
+        {/* 2. 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy) — 클릭 시 해당 엔진 추천 결과 표시 */}
         {recommendations && (recommendations.association?.length > 0 || recommendations.similar_store?.length > 0 || recommendations.latent_demand?.length > 0 || recommendations.trend?.length > 0) && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-8">
             <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">⚙️ 상점별 맞춤형 추천 엔진 가동 현황 (4-Engine Strategy)</h2>
             <p className="text-sm text-[#6e6e73] mb-4">
-              상점의 특성에 따라 가장 효율적인 무기를 골라 사용합니다. CTO 설계 4대 엔진이 이 상점에서 어떻게 작동하는지 확인하세요.
+              상점의 특성에 따라 가장 효율적인 무기를 골라 사용합니다. CTO 설계 4대 엔진이 이 상점에서 어떻게 작동하는지 확인하세요. <strong>엔진 카드를 클릭하면 해당 추천 결과가 아래에 표시됩니다.</strong>
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {(() => {
@@ -672,29 +714,127 @@ export default function RecommendationPage() {
                 const scoreL = l.length ? l.reduce((sum, r) => sum + (r.predicted_sales ?? 0), 0) / l.length : 0;
                 const scoreT = t.length ? t.reduce((sum, r) => sum + (r.growth_rate ?? 0), 0) / t.length : 0;
                 const arr = [
-                  { key: 'association', label: 'Association Engine', score: scoreA, count: a.length, msg: 'A 상품을 산 고객은 B도 삽니다 (연관 판매 강조)' },
-                  { key: 'similar_store', label: 'Similar Store', score: scoreS, count: s.length, msg: '유사 매장에서 잘 팔리는 상품을 이 매장에도' },
-                  { key: 'latent_demand', label: 'Latent Demand', score: scoreL, count: l.length, msg: '아직 안 샀지만 곧 살 고객 타겟팅' },
-                  { key: 'trend', label: 'Trend', score: scoreT, count: t.length, msg: '성장률 기반 트렌드 반영' },
+                  { key: 'association' as const, label: 'Association Engine', score: scoreA, count: a.length, msg: 'A 상품을 산 고객은 B도 삽니다 (연관 판매 강조)' },
+                  { key: 'similar_store' as const, label: 'Similar Store', score: scoreS, count: s.length, msg: '유사 매장에서 잘 팔리는 상품을 이 매장에도' },
+                  { key: 'latent_demand' as const, label: 'Latent Demand', score: scoreL, count: l.length, msg: '아직 안 샀지만 곧 살 고객 타겟팅' },
+                  { key: 'trend' as const, label: 'Trend', score: scoreT, count: t.length, msg: '성장률 기반 트렌드 반영' },
                 ];
                 const maxScore = Math.max(scoreA, scoreS, scoreL, scoreT);
-                return arr.map((e) => (
-                  <div
-                    key={e.key}
-                    className={`rounded-xl border-2 p-4 ${maxScore > 0 && e.score === maxScore ? 'border-[#0071e3] bg-blue-50' : 'border-gray-200 bg-gray-50'}`}
-                  >
-                    <p className="text-xs font-semibold text-[#6e6e73] mb-1">{e.label}</p>
-                    <p className="text-sm font-medium text-[#1d1d1f] mb-2">
-                      점수 요약: {e.score.toFixed(2)} · 추천 {e.count}건
-                    </p>
-                    <p className="text-xs text-[#6e6e73]">{e.msg}</p>
-                    {maxScore > 0 && e.score === maxScore && (
-                      <span className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-[#0071e3] text-white">주도 엔진</span>
-                    )}
-                  </div>
-                ));
+                return arr.map((e) => {
+                  const isSelected = selectedEngineKey === e.key;
+                  const isLeading = maxScore > 0 && e.score === maxScore;
+                  return (
+                    <button
+                      key={e.key}
+                      type="button"
+                      onClick={() => setSelectedEngineKey(e.key)}
+                      className={`rounded-xl border-2 p-4 text-left w-full cursor-pointer transition-colors hover:border-[#0071e3] hover:bg-blue-50/50 ${
+                        isSelected ? 'border-[#0071e3] bg-blue-50 ring-2 ring-[#0071e3]/30' : isLeading ? 'border-[#0071e3] bg-blue-50' : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <p className="text-xs font-semibold text-[#6e6e73] mb-1">{e.label}</p>
+                      <p className="text-sm font-medium text-[#1d1d1f] mb-2">
+                        점수 요약: {e.score.toFixed(2)} · 추천 {e.count}건
+                      </p>
+                      <p className="text-xs text-[#6e6e73]">{e.msg}</p>
+                      {isLeading && (
+                        <span className="mt-2 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-[#0071e3] text-white">주도 엔진</span>
+                      )}
+                      {isSelected && (
+                        <span className="mt-2 ml-1 inline-block px-2 py-0.5 rounded text-xs font-semibold bg-emerald-600 text-white">선택됨</span>
+                      )}
+                    </button>
+                  );
+                });
               })()}
             </div>
+            {/* 선택한 엔진 추천 결과 표시 */}
+            {(() => {
+              const engineKey = selectedEngineKey ?? (() => {
+                const a = recommendations.association ?? [];
+                const s = recommendations.similar_store ?? [];
+                const l = recommendations.latent_demand ?? [];
+                const t = recommendations.trend ?? [];
+                const scoreA = a.length ? a.reduce((sum, r) => sum + (r.lift ?? 0), 0) / a.length : 0;
+                const scoreS = s.length ? s.reduce((sum, r) => sum + (r.similarity_score ?? 0), 0) / s.length : 0;
+                const scoreL = l.length ? l.reduce((sum, r) => sum + (r.predicted_sales ?? 0), 0) / l.length : 0;
+                const scoreT = t.length ? t.reduce((sum, r) => sum + (r.growth_rate ?? 0), 0) / t.length : 0;
+                const max = Math.max(scoreA, scoreS, scoreL, scoreT);
+                if (max === scoreT && t.length) return 'trend' as const;
+                if (max === scoreL && l.length) return 'latent_demand' as const;
+                if (max === scoreS && s.length) return 'similar_store' as const;
+                if (max === scoreA && a.length) return 'association' as const;
+                return null;
+              })();
+              const list = engineKey ? (recommendations[engineKey] ?? []) : [];
+              const labels: Record<string, string> = {
+                association: 'Association Engine',
+                similar_store: 'Similar Store',
+                latent_demand: 'Latent Demand',
+                trend: 'Trend',
+              };
+              const scoreKeys: Record<string, keyof StoreRecommendation> = {
+                association: 'lift',
+                similar_store: 'similarity_score',
+                latent_demand: 'predicted_sales',
+                trend: 'growth_rate',
+              };
+              const scoreLabels: Record<string, string> = {
+                association: 'Lift',
+                similar_store: '유사도 점수',
+                latent_demand: '예상 매출',
+                trend: '성장률',
+              };
+              const sk = scoreKeys[engineKey] ?? 'lift';
+              if (engineKey == null) return null;
+              return (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="text-base font-semibold text-[#1d1d1f] mb-3">
+                    📋 {labels[engineKey]} 추천 결과 {selectedEngineKey ? '' : '(주도 엔진)'}
+                  </h3>
+                  {list.length === 0 ? (
+                    <p className="text-sm text-[#86868b] py-4">이 엔진에 대한 추천 결과가 없습니다.</p>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
+                          <tr className="text-left text-[#6e6e73]">
+                            <th className="py-2 pr-4">순위</th>
+                            <th className="py-2 pr-4">제품명</th>
+                            <th className="py-2 text-right">{scoreLabels[engineKey]}</th>
+                            {(engineKey === 'similar_store' || engineKey === 'trend') && (
+                              <th className="py-2 text-right text-[#6e6e73]">비고</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.map((row, i) => (
+                            <tr key={i} className="border-b border-gray-100">
+                              <td className="py-2 text-[#1d1d1f]">{i + 1}</td>
+                              <td className="py-2 text-[#1d1d1f]">{row.product_name ?? '-'}</td>
+                              <td className="py-2 text-right font-medium text-[#1d1d1f]">
+                                {sk === 'lift' && row.lift != null && row.lift.toFixed(2)}
+                                {sk === 'similarity_score' && row.similarity_score != null && row.similarity_score.toFixed(2)}
+                                {sk === 'predicted_sales' && row.predicted_sales != null && Number(row.predicted_sales).toLocaleString()}
+                                {sk === 'growth_rate' && row.growth_rate != null && row.growth_rate.toFixed(2)}
+                                {row[sk] == null && '-'}
+                              </td>
+                              {(engineKey === 'similar_store' || engineKey === 'trend') && (
+                                <td className="py-2 text-right text-[#86868b] text-xs">
+                                  {engineKey === 'similar_store' && row.sales_in_similar_store != null && `유사매장 매출 ${Number(row.sales_in_similar_store).toLocaleString()}`}
+                                  {engineKey === 'trend' && row.recent_sales != null && `최근 매출 ${Number(row.recent_sales).toLocaleString()}`}
+                                  {((engineKey === 'similar_store' && row.sales_in_similar_store == null) || (engineKey === 'trend' && row.recent_sales == null)) && '-'}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
