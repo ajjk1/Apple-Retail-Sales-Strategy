@@ -1863,61 +1863,64 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 위험 품목: 차트 */}
+                  {/* 위험 품목: 과잉 재고 TOP 5와 동일한 카드·라이트 테마 (제목·설명·배지 + 스택 막대 차트) */}
                   {dangerTop5.length > 0 && (
-                    <div className="mb-6">
-                      <div className="rounded-xl border border-gray-200 bg-white p-4">
-                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">위험 품목</h3>
-                        <p className="text-xs text-[#86868b] mb-3">
-                          위험 품목 재고량 기준 Top 5 매장을 대상으로, 현재고(남색)와 목표 안전 재고까지 필요한 발주량(빨강)을 스택 막대로 표시합니다.
-                        </p>
-                        <div className="w-full h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={dangerTop5}
-                              margin={{ top: 8, right: 24, left: 8, bottom: 24 }}
-                            >
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
-                              <XAxis
-                                dataKey="name"
-                                tick={{ fontSize: 11 }}
-                                interval={0}
-                                tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
-                              />
-                              <YAxis
-                                tick={{ fontSize: 11 }}
-                                stroke="#6e6e73"
-                                tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}${QUANTITY_UNIT}`}
-                              />
-                              <Tooltip
-                                formatter={(value: number, name: string) => {
-                                  if (name === 'current') {
-                                    return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '현재 재고'];
-                                  }
-                                  if (name === 'needed') {
-                                    return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '필요 발주량'];
-                                  }
-                                  return [value, name];
-                                }}
-                                labelFormatter={(label) => `매장: ${label}`}
-                              />
-                              <Bar
-                                dataKey="current"
-                                stackId="danger"
-                                name="current"
-                                fill="#1d4ed8"
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <Bar
-                                dataKey="needed"
-                                stackId="danger"
-                                name="needed"
-                                fill="#dc2626"
-                                radius={[0, 0, 4, 4]}
-                              />
-                            </BarChart>
-                          </ResponsiveContainer>
+                    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#1d1d1f]">위험 품목</h3>
+                          <p className="text-xs text-[#86868b] mt-0.5">
+                            위험 품목 재고량 기준 Top 5 매장을 대상으로, 현재고(남색)와 목표 안전 재고까지 필요한 발주량(빨강)을 스택 막대로 표시합니다.
+                          </p>
                         </div>
+                        <span className="text-[10px] px-2 py-1 rounded bg-gray-100 text-[#6e6e73] border border-gray-200">기준: 실데이터</span>
+                      </div>
+                      <div className="w-full h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={dangerTop5}
+                            margin={{ top: 8, right: 24, left: 8, bottom: 24 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
+                            <XAxis
+                              dataKey="name"
+                              tick={{ fontSize: 11 }}
+                              interval={0}
+                              tickFormatter={(v: string) => (v?.length > 6 ? `${v.slice(0, 6)}…` : v)}
+                            />
+                            <YAxis
+                              tick={{ fontSize: 11 }}
+                              stroke="#6e6e73"
+                              tickFormatter={(v) => `${(Number(v) || 0).toLocaleString()}${QUANTITY_UNIT}`}
+                            />
+                            <Tooltip
+                              formatter={(value: number, name: string) => {
+                                if (name === 'current') {
+                                  return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '현재 재고'];
+                                }
+                                if (name === 'needed') {
+                                  return [`${(Number(value) || 0).toLocaleString()}${QUANTITY_UNIT}`, '필요 발주량'];
+                                }
+                                return [value, name];
+                              }}
+                              labelFormatter={(label) => `매장: ${label}`}
+                            />
+                            <Bar
+                              dataKey="current"
+                              stackId="danger"
+                              name="current"
+                              fill="#1d4ed8"
+                              radius={[4, 4, 0, 0]}
+                            />
+                            <Bar
+                              dataKey="needed"
+                              stackId="danger"
+                              name="needed"
+                              fill="#dc2626"
+                              radius={[0, 0, 4, 4]}
+                            />
+                          </BarChart>
+                        </ResponsiveContainer>
                       </div>
                     </div>
                   )}
