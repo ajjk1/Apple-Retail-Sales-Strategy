@@ -14,6 +14,9 @@ RUN test -f /app/model-server/load_sales_data.py || (echo "Build error: model-se
 WORKDIR /app/web-development/backend
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 배포 시 02.Database for dashboard 경량 SQL 사용 (01.data 대용량 업로드 불필요)
+ENV USE_DASHBOARD_SQL=1
+
 # HF Spaces 기본 포트 7860
 EXPOSE 7860
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]

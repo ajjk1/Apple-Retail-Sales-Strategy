@@ -1,6 +1,20 @@
-# Apple 리테일 대시보드
+# Apple 리테일 대시보드 (web-development)
 
-FastAPI(백엔드) + Next.js(프론트엔드) 기반 대시보드입니다. 모델 서버의 **예측·매출·재고·추천** 로직을 API로 제공하고, 웹에서 수요·매출·안전재고·상점별 추천을 표시합니다.
+FastAPI(백엔드) + Next.js(프론트엔드) 기반 대시보드입니다. 모델 서버의 **예측·매출·재고·추천** 로직을 API로 제공하고, 웹에서 수요·매출·안전재고·상점별 추천을 표시합니다.  
+**상위 설명서**: 프로젝트 루트의 **`README.md`** 에서 전체 구조·데이터 정책·기술 스택을 더 상세히 다룹니다. 이 파일은 **실행·데이터·대시보드 요약**에 집중합니다.
+
+---
+
+## 이 문서의 구성
+
+| 섹션 | 내용 |
+|------|------|
+| §1 | 프로젝트 구조 (디렉터리·데이터 흐름) |
+| §2 | 실행 방법 (start.ps1 권장, 수동, 접속 주소·env) |
+| §3 | 데이터 소스 정책 (로컬 01.data / 배포 02.Database for dashboard, USE_DASHBOARD_SQL) |
+| §4 | 워킹 노트 (대시보드별 로직·API·기능) |
+| §5~7 | API 참조, 점검·문제 해결, 주요 파일 |
+| §8~9 | 안정화 요약, Hugging Face 배포 |
 
 ---
 
@@ -23,11 +37,11 @@ ajjk1/
 
 **데이터 연동 흐름**
 
-1. 백엔드 기동 시 `model-server/load_sales_data.py` 로드 → `load_sales_dataframe`, `get_data_source_info` 연동
-2. 위 로더로 **01.data(SQL/CSV)** 에서 판매 데이터 로드 → 예측·매출·재고·추천 모듈이 **동일 소스** 사용
-3. FastAPI(main.py)가 `/api/*` 로 데이터 제공 → 프론트엔드가 호출 → 대시보드에 수요·매출·안전재고·추천 표시
+1. **단일 진입점**: `model-server/load_sales_data.py`의 `load_sales_dataframe()` / `get_data_source_info()`가 모든 데이터의 진입점.
+2. **소스 결정**: **로컬**이면 `01.data/*.sql` 우선 → 없으면 `02.Database for dashboard/*.sql` → CSV. **배포**(`USE_DASHBOARD_SQL=1`)면 `02.Database for dashboard/*.sql` 우선. (상세는 §3 및 루트 `README.md` §3 참고.)
+3. **공통 DataFrame** → 예측(03)·매출(04)·안전재고(05)·추천(06) 모듈이 동일 소스 사용 → `main.py`가 `/api/*` 제공 → 프론트엔드가 호출해 대시보드 표시.
 
-`GET /api/data-source` 의 `loader` 가 `model_server` 이면 load_sales_data.py 연동, `builtin` 이면 백엔드 내장 로더 사용.
+현재 사용 중인 소스: `GET /api/data-source` 에서 `source`, `data_dir`, `sql_file_count` 확인.
 
 ---
 
@@ -88,61 +102,44 @@ Vercel 프로젝트 환경 변수에 `BACKEND_URL`, `NEXT_PUBLIC_API_URL` = 위 
 
 ---
 
-## 3. 데이터 준비
+## 3. 데이터 소스 정책 및 준비
 
-- **SQL 사용 (권장)**: `model-server/01.data/` 에 `Apple_Retail_Sales_Dataset_Modified_01.sql` ~ `_10.sql` 이 있으면 자동 사용
-- **CSV 폴백**: SQL이 없으면 `01.data/data_02_inventory_final.csv` 등 CSV 사용
+- **정책 요약**  
+  - **로컬**: `model-server/01.data/` SQL 우선 → 없으면 `02.Database for dashboard/*.sql` → CSV.  
+  - **배포**: **`02.Database for dashboard`** 만 사용하는 것이 권장됨. 환경 변수 **`USE_DASHBOARD_SQL=1`** 설정 시 해당 폴더 SQL을 우선 로드(Dockerfile에 이미 설정됨).  
+  → 배포 시 01.data 대용량 SQL 없이 경량 SQL만 올리면 되므로 문제 없이 동작.
+- **실제 준비**  
+  - 로컬: `01.data/` 에 `Apple_Retail_Sales_Dataset_Modified_01.sql` ~ `_10.sql` 등 두면 자동 사용.  
+  - 배포: `02.Database for dashboard/*.sql` 만 포함하고 `USE_DASHBOARD_SQL=1` 유지.
 
-데이터는 `load_sales_data.py` 에서 한 번만 읽고, 예측·매출·재고·대시보드 API가 **동일 소스**를 사용합니다.
+데이터는 `load_sales_data.py` 에서 **한 번만** 읽히며, 모든 대시보드 API가 **동일 DataFrame**을 참조합니다.
 
 ---
 
 ## 4. 워킹 노트 (대시보드별 요약)
 
-### 안전재고 대시보드 (Inventory Optimization)
+대시보드는 **수요 → 매출 → 안전재고 → 추천** 순으로 정리했습니다. 상세는 루트 **`README.md` §5** 참고.
 
-- **로직 위치**: **`model-server/05.Inventory Optimization/Inventory Optimization.py`** 만 수정. `main.py`는 라우트에서 해당 함수만 호출.
-- **UI**: `frontend/app/page.tsx` (오버레이)
-- **API**: `GET /api/safety-stock`, `/api/safety-stock-forecast-chart`, `/api/safety-stock-sales-by-store-period`, `/api/safety-stock-sales-by-product`, `/api/safety-stock-kpi`, `/api/safety-stock-inventory-list`, `/api/inventory-comments` (GET/POST)
+### 수요 대시보드
 
-| 기능 | 설명 |
-|------|------|
-| 카테고리별 판매대수 | 파이 차트, 연도 선택 |
-| 상점별 3개월 판매 수량 | 연도·분기별 막대, 분기 클릭 시 상품별 차트 반영 |
-| 상품별 판매 수량 | 가로 막대, 상품 클릭 시 수요 예측 차트 표시 |
-| 수요 예측 & 적정 재고 | 2020년부터 분기별, **ARIMA(arima_model.joblib)** 전용 |
-
-### 상점별 맞춤형 성장 전략 대시보드 (추천)
-
-- **경로**: 대시보드(3000) → `/recommendation`
-- **로직 위치**: **`model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py`**
-- **UI**: `frontend/app/recommendation/page.tsx`
-- **API**: `GET /api/store-list`, `/api/store-recommendations/{store_id}`, `/api/store-sales-forecast/{store_id}`, `/api/demand-dashboard?store_id=...&year=2024`, `/api/safety-stock-inventory-list?status_filter=Overstock`, `/api/sales-summary`, `/api/recommendation-summary`
-
-| 기능 | 설명 |
-|------|------|
-| 상점 선택 | store-list(SQL) 기반 셀렉트 |
-| 향후 30일 매출 예측 | 일별 실측 + 선형 회귀 예측 + 신뢰 구간 |
-| 안전재고·매출·수요 연동 | 과잉 재고 Top 8, 매출 요약(상점 비중), 수요 대시보드(2025 카테고리/제품 예측) |
-| 4대 추천 | 유사 상점, 연관 분석(Basket), 잠재 수요(SVD), 지역 트렌드 |
-| 추천 폴백 | 결과 없을 때 **전체 매출 기준 상위 5개 품목** 표시 |
+- **경로**: 메인(3000) → 지도에서 지역 선택 시 수요 박스 / 수요 대시보드 오버레이
+- **로직**: `model-server/03.prediction model/prediction model.py`
+- **UI**: `frontend/app/page.tsx` | **API**: `GET /api/demand-dashboard`, `/api/sales-quantity-forecast`, `/api/predicted-demand-by-product` 등
 
 ### 매출 대시보드 (Sales)
 
-- **경로**: 대시보드(3000) → `/sales`
-- **로직 위치**: **`model-server/04.Sales analysis/Sales analysis.py`** (수정은 이 파일만. `main.py`는 라우트·호출만)
-- **UI**: `frontend/app/sales/page.tsx`
-- **API**: `GET /api/sales-summary`, `/api/store-performance-grade`, `/api/sales-by-store`, `/api/sales-by-store-quarterly`, `/api/sales-by-store-quarterly-by-category`, `/api/sales-by-country-category`, `/api/region-category-pivot` 등
-- **데이터**: `load_sales_dataframe()` → SQL(01.data) 또는 CSV. 연도별·분기별·매장별·국가별 매출 집계.
+- **경로**: `/sales` | **로직**: `model-server/04.Sales analysis/Sales analysis.py`
+- **UI**: `frontend/app/sales/page.tsx` | **API**: `GET /api/sales-summary`, `/api/sales-by-store-quarterly` 등
 
-| 기능 | 설명 |
-|------|------|
-| 전체·연도별 매출 | 2020~2024 + 2025 예상, Top 스토어 |
-| 매장 등급·달성률 | [3.4.1] 등급 분포, 연간 목표 대비 |
-| 지역별 카테고리 피봇 | [3.4.2] 국가 선택 시 카테고리별 매출 |
-| 매장별 매출 | 국가 선택 → 매장 바차트, **매장 클릭 시 3개월 단위 매출 추이** (라인·스캐터, 카테고리별 분기 추이) |
+### 안전재고 대시보드 (Inventory Optimization)
 
-**안정화 요약**: API 호출은 `lib/api.ts`에서 **상대경로(프록시) 우선** 시도 → 매출/추천 대시보드 로드 안정화. 분기별 그래프는 `Sales analysis.py`에서 매장명 매칭 강화(대소문자·Apple/Apple Store 접두사·후보 확장)로 "소호(SoHo)" 등 클릭 시 데이터 정상 표시.
+- **경로**: 메인(3000) → 안전재고 오버레이 | **로직**: `model-server/05.Inventory Optimization/Inventory Optimization.py`
+- **UI**: `frontend/app/page.tsx` | **API**: `GET /api/safety-stock`, `/api/safety-stock-forecast-chart`, `/api/safety-stock-inventory-list` 등
+
+### 상점별 맞춤형 성장 전략 대시보드 (추천)
+
+- **경로**: `/recommendation` | **로직**: `model-server/06.Real-time execution and performance dashboard/`
+- **UI**: `frontend/app/recommendation/page.tsx` | **API**: `GET /api/store-list`, `/api/store-recommendations/{store_id}` 등
 
 ### 데이터·공통
 
@@ -168,6 +165,8 @@ Vercel 프로젝트 환경 변수에 `BACKEND_URL`, `NEXT_PUBLIC_API_URL` = 위 
 ---
 
 ## 6. 점검·문제 해결
+
+**확인 순서**: (1) `http://127.0.0.1:8000/api/health` 로 백엔드 기동 여부 확인 → (2) `cd web-development/backend` 후 `python main.py --integration-check` 로 로더·4개 모듈 연동 확인 → (3) `GET /api/quick-status` 또는 `/api/integration-status` 로 `modules_loaded` 확인. 상세한 증상별 해결은 루트 **`README.md` §7** 참고.
 
 ### 재점검 체크리스트
 
@@ -258,7 +257,7 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 
 | 구분 | 위치 | 역할 |
 |------|------|------|
-| 데이터 로드 | `model-server/load_sales_data.py` | SQL(01.data/*.sql) 우선, CSV 폴백. 모든 모듈 동일 소스 사용. |
+| 데이터 로드 | `model-server/load_sales_data.py` | 로컬: 01.data 우선. 배포: USE_DASHBOARD_SQL=1 시 02.Database for dashboard 우선. 모든 모듈 동일 소스. |
 | 예측 | `model-server/03.prediction model/` (arima_model.joblib 등) | 수요·매출 예측. |
 | 매출 집계·분기·매장명 매칭 | `model-server/04.Sales analysis/Sales analysis.py` | 매출 대시보드 전용 로직. |
 | 안전재고·수요 예측 차트 | `model-server/05.Inventory Optimization/Inventory Optimization.py` | 안전재고 대시보드 전용. |
@@ -283,7 +282,10 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 ### 9.4 Hugging Face Space (백엔드 배포)
 
 - **Space**: [apple-retail-study/Apple-Retail-Sales-Strategy](https://huggingface.co/spaces/apple-retail-study/Apple-Retail-Sales-Strategy)
-- **Exit 137(OOM) 대응**:  
-  - `.hfignore`에서 `*.sql` 제외 후 **`model-server/02.Database for dashboard/*.sql`만 허용** → 01.data 대용량 SQL 미업로드, 경량 SQL만 사용.  
-  - 백엔드 **기동 시 `load_sales_dataframe()` 호출 제거** → 첫 API 요청 시 지연 로드로 기동 시 메모리 절감.
+- **배포용 데이터**: **`02.Database for dashboard`** 폴더만 사용하도록 설정하면 배포 시 문제가 없음.  
+  - Dockerfile에 **`ENV USE_DASHBOARD_SQL=1`** 설정됨 → 컨테이너 기동 시 `02.Database for dashboard/*.sql` 우선 로드.  
+  - `.hfignore`에서 `01.data/*.sql` 제외 후 **`02.Database for dashboard/*.sql`만 포함**해 업로드하면 대용량 없이 배포 가능.
+- **Exit 137(OOM) 대응**: 백엔드 기동 시 `load_sales_dataframe()` 호출 제거 → 첫 API 요청 시 지연 로드로 기동 시 메모리 절감.
 - **동기화**: GitHub Actions(`.github/workflows/sync_to_hf.yml`)는 현재 `ajjk1/apple-sales-api`로 푸시. 위 Space가 다른 리포라면 해당 Space 리포로 푸시하도록 워크플로의 `huggingface.co/spaces/...` URL을 수정해야 함.
+
+**관련 문서**: 루트 `README.md`(전체 구조·데이터 정책·점검 상세), `backend/HF_SPACE_CHECK.md`(HF 배포 점검), `VERCEL_GITHUB_SETUP.md`(Vercel 루트 디렉터리).

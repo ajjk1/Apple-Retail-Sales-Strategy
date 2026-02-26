@@ -50,6 +50,10 @@ Thumbs.db
 # ---------------------------------------------------------------------------
 *.log
 .cache/
+.coverage
+web-development/backend/.coverage
+web-development/backend/.pytest_cache/
+web-development/frontend/coverage/
 
 # Python 관련 제외
 __pycache__/

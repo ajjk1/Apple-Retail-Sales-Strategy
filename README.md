@@ -9,7 +9,23 @@ pinned: false
 
 # Apple 리테일 대시보드
 
-FastAPI(백엔드) + Next.js(프론트엔드) 기반 대시보드입니다. 모델 서버의 **예측·매출·재고·추천** 로직을 API로 제공하고, 웹에서 수요·매출·안전재고·상점별 추천을 표시합니다.
+FastAPI(백엔드) + Next.js(프론트엔드) 기반 대시보드입니다. 모델 서버의 **예측·매출·재고·추천** 로직을 API로 제공하고, 웹에서 **수요·매출·안전재고·상점별 추천**을 표시합니다.
+
+---
+
+## 이 문서의 구성 (논리 순서)
+
+| 섹션 | 제목 | 내용 |
+|------|------|------|
+| §1 | 구조 | 디렉터리와 **데이터 흐름**(단일 로드 → 4개 모듈 공유 → API → UI). |
+| §2 | 데이터 | **로컬 vs 배포**에서 쓸 SQL 폴더(01.data / 02.Database for dashboard), **어떤 파일을 둘지**. |
+| §3 | 실행 | 서버 띄우기(권장: start.ps1), 접속 주소, env. |
+| §4 | 대시보드 | 수요·매출·안전재고·추천 **네 가지**의 경로, 로직 위치, API, 기능 요약. |
+| §5 | API 참조 | 엔드포인트와 담당 모듈 매핑 표. |
+| §6 | 점검·문제 해결 | 확인 순서 → 체크리스트 → 증상별 해결. |
+| §7 | 참조 | 주요 파일, 다음 작업, 관련 문서. |
+| §8 | 안정화 요약 | 역할 분리, 매출/추천 안정화, 최근 작업. |
+| §9 | 기술 스택 | 프론트·백엔드·모델 서버·인프라 명세. |
 
 ---
 
@@ -30,17 +46,44 @@ ajjk1/
 │   └── README.md                   # 이 파일
 ```
 
-**데이터 연동 흐름**
+**데이터 연동 흐름 (논리적 순서)**
 
-1. 백엔드 기동 시 `model-server/load_sales_data.py` 로드 → `load_sales_dataframe`, `get_data_source_info` 연동
-2. 위 로더로 **01.data(SQL/CSV)** 에서 판매 데이터 로드 → 예측·매출·재고·추천 모듈이 **동일 소스** 사용
-3. FastAPI(main.py)가 `/api/*` 로 데이터 제공 → 프론트엔드가 호출 → 대시보드에 수요·매출·안전재고·추천 표시
+1. **단일 진입점**: 백엔드 기동 시 `model-server/load_sales_data.py`가 로드되며, `load_sales_dataframe()`과 `get_data_source_info()`가 모든 데이터 요청의 진입점이 됩니다.
+2. **데이터 소스 결정**: 로더는 **환경에 따라** 아래와 같이 사용할 SQL 폴더를 결정합니다.  
+   - **로컬**: `01.data/*.sql` 우선 → 없으면 `02.Database for dashboard/*.sql` → 없으면 CSV.  
+   - **배포** (`USE_DASHBOARD_SQL=1` 설정 시): `02.Database for dashboard/*.sql` 우선 → 없으면 01.data.  
+   → 자세한 정책과 준비 방법은 **§2 데이터** 참고.
+3. **공통 DataFrame**: 위에서 한 번 로드한 DataFrame을 예측(03)·매출(04)·안전재고(05)·추천(06) 모듈이 **동일하게** 사용합니다. 즉, 대시보드 간 데이터 불일치가 나지 않도록 단일 소스가 보장됩니다.
+4. **API·UI**: FastAPI(`main.py`)는 위 모듈의 함수만 호출해 `/api/*` 응답을 만들고, 프론트엔드(Next.js)가 해당 API를 호출해 수요·매출·안전재고·추천 화면을 표시합니다.
 
-`GET /api/data-source` 의 `loader` 가 `model_server` 이면 load_sales_data.py 연동, `builtin` 이면 백엔드 내장 로더 사용.
+**확인**: `GET /api/data-source`에서 현재 사용 중인 소스(`source`, `data_dir`, `sql_file_count`)를 확인할 수 있습니다.
 
 ---
 
-## 2. 실행 방법
+## 2. 데이터 (소스 정책과 준비)
+
+대시보드용 판매 데이터는 **한 곳(`load_sales_data.py`)에서만** 로드되며, **환경(로컬 vs 배포)에 따라 사용할 SQL 폴더가 달라집니다.** 아래 정책에 맞게 파일만 준비하면 됩니다.
+
+### 2.1 소스 정책 (로컬 vs 배포)
+
+| 환경 | 사용 폴더 | 조건 | 목적 |
+|------|-----------|------|------|
+| **로컬** | `01.data/` 우선 | 해당 폴더에 `*.sql` 있음 | 개발·테스트용 전체 데이터. 없으면 `02.Database for dashboard/*.sql` → CSV 순. |
+| **배포** | `02.Database for dashboard/` 우선 | 환경 변수 `USE_DASHBOARD_SQL=1` 설정 | 경량 SQL만 올려도 되므로 배포 안정. Dockerfile에 이미 설정됨. |
+
+- **배포에서 02만 쓰는 이유**: 01.data는 대용량일 수 있어, HF Space 등에서는 **02 폴더 경량 SQL만** 올리고 `USE_DASHBOARD_SQL=1`로 그쪽만 로드하면 문제 없이 동작합니다.
+- **정리**: 로컬 = 01.data 두고 개발, 배포 = 02만 포함하고 `USE_DASHBOARD_SQL=1` 유지.
+
+### 2.2 준비 (어떤 파일을 어디에 둘지)
+
+- **로컬**: `model-server/01.data/` 에 `Apple_Retail_Sales_Dataset_Modified_01.sql` ~ `_10.sql`(또는 동일 스키마 SQL)을 두면 자동 우선 사용. 없으면 02 폴더·CSV 순으로 폴백.
+- **배포**: `model-server/02.Database for dashboard/` 에 `dashboard_sales_data.sql` 등 `*.sql`만 포함. 01.data 대용량 SQL은 업로드하지 않아도 됨.
+
+데이터는 **한 번만** 읽히고, 수요·매출·안전재고·추천 **모든 API가 동일한 DataFrame**을 참조합니다.
+
+---
+
+## 3. 실행 방법
 
 ### 방법 1: start.ps1 사용 (권장)
 
@@ -94,44 +137,23 @@ npm run dev
 
 ---
 
-## 3. 데이터 준비
+## 4. 대시보드 (워킹 노트)
 
-- **SQL 사용 (권장)**: `model-server/01.data/` 에 `Apple_Retail_Sales_Dataset_Modified_01.sql` ~ `_10.sql` 이 있으면 자동 사용
-- **CSV 폴백**: SQL이 없으면 `01.data/data_02_inventory_final.csv` 등 CSV 사용
+대시보드는 **수요 → 매출 → 안전재고 → 추천** 순으로 정리했습니다.
 
-데이터는 `load_sales_data.py` 에서 한 번만 읽고, 예측·매출·재고·대시보드 API가 **동일 소스**를 사용합니다.
+### 수요 대시보드
 
----
-
-## 4. 워킹 노트 (대시보드별 요약)
-
-### 안전재고 대시보드 (Inventory Optimization)
-
-- **로직 위치**: **`model-server/05.Inventory Optimization/Inventory Optimization.py`** 만 수정. `main.py`는 라우트에서 해당 함수만 호출.
-- **UI**: `frontend/app/page.tsx` (오버레이)
-- **API**: `GET /api/safety-stock`, `/api/safety-stock-forecast-chart`, `/api/safety-stock-sales-by-store-period`, `/api/safety-stock-sales-by-product`, `/api/safety-stock-kpi`, `/api/safety-stock-inventory-list`, `/api/inventory-comments` (GET/POST)
+- **경로**: 대시보드(3000) 메인 → 지도에서 대륙·국가·스토어·도시 선택 시 수요 박스 / 또는 **수요 대시보드 오버레이**
+- **로직 위치**: **`model-server/03.prediction model/prediction model.py`** (`get_demand_dashboard_data`, `get_sales_quantity_forecast`, `get_predicted_demand_by_product` 등)
+- **UI**: `frontend/app/page.tsx` (메인 페이지 내 수요 박스·수요 대시보드 오버레이)
+- **API**: `GET /api/demand-dashboard`, `/api/sales-quantity-forecast`, `/api/predicted-demand-by-product`, `/api/store-markers`, `/api/city-category-pie` 등
 
 | 기능 | 설명 |
 |------|------|
-| 카테고리별 판매대수 | 파이 차트, 연도 선택 |
-| 상점별 3개월 판매 수량 | 연도·분기별 막대, 분기 클릭 시 상품별 차트 반영 |
-| 상품별 판매 수량 | 가로 막대, 상품 클릭 시 수요 예측 차트 표시 |
-| 수요 예측 & 적정 재고 | 2020년부터 분기별, **ARIMA(arima_model.joblib)** 전용 |
-
-### 상점별 맞춤형 성장 전략 대시보드 (추천)
-
-- **경로**: 대시보드(3000) → `/recommendation`
-- **로직 위치**: **`model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py`**
-- **UI**: `frontend/app/recommendation/page.tsx`
-- **API**: `GET /api/store-list`, `/api/store-recommendations/{store_id}`, `/api/store-sales-forecast/{store_id}`, `/api/demand-dashboard?store_id=...&year=2024`, `/api/safety-stock-inventory-list?status_filter=Overstock`, `/api/sales-summary`, `/api/recommendation-summary`
-
-| 기능 | 설명 |
-|------|------|
-| 상점 선택 | store-list(SQL) 기반 셀렉트 |
-| 향후 30일 매출 예측 | 일별 실측 + 선형 회귀 예측 + 신뢰 구간 |
-| 안전재고·매출·수요 연동 | 과잉 재고 Top 8, 매출 요약(상점 비중), 수요 대시보드(2025 카테고리/제품 예측) |
-| 4대 추천 | 유사 상점, 연관 분석(Basket), 잠재 수요(SVD), 지역 트렌드 |
-| 추천 폴백 | 결과 없을 때 **전체 매출 기준 상위 5개 품목** 표시 |
+| 지역별 총 수요 | 선택한 대륙·국가·스토어·도시의 연도별 판매 수량(총 수요) |
+| 카테고리별 수요 | 전체 100% 기준 카테고리별 수요 비중 |
+| 상품별 수요·2025 예측 | product_id별 2020~2024 실적 + 2025 예측 (ARIMA·선형 추세 폴백) |
+| 2025 수량 예측 | `get_sales_quantity_forecast` 기반 연간 예측 수량 |
 
 ### 매출 대시보드 (Sales)
 
@@ -148,7 +170,37 @@ npm run dev
 | 지역별 카테고리 피봇 | [3.4.2] 국가 선택 시 카테고리별 매출 |
 | 매장별 매출 | 국가 선택 → 매장 바차트, **매장 클릭 시 3개월 단위 매출 추이** (라인·스캐터, 카테고리별 분기 추이) |
 
-**안정화 요약**: API 호출은 `lib/api.ts`에서 **상대경로(프록시) 우선** 시도 → 매출/추천 대시보드 로드 안정화. 분기별 그래프는 `Sales analysis.py`에서 매장명 매칭 강화(대소문자·Apple/Apple Store 접두사·후보 확장)로 "소호(SoHo)" 등 클릭 시 데이터 정상 표시.
+**안정화 요약**: API 호출은 `lib/api.ts`에서 **상대경로(프록시) 우선** 시도. 분기별 그래프는 `Sales analysis.py`에서 매장명 매칭 강화(대소문자·Apple/Apple Store 접두사·후보 확장)로 "소호(SoHo)" 등 클릭 시 데이터 정상 표시.
+
+### 안전재고 대시보드 (Inventory Optimization)
+
+- **경로**: 대시보드(3000) 메인 → **안전재고** 진입 시 오버레이 (Inventory Action Center)
+- **로직 위치**: **`model-server/05.Inventory Optimization/Inventory Optimization.py`** 만 수정. `main.py`는 라우트에서 해당 함수만 호출.
+- **UI**: `frontend/app/page.tsx` (안전재고 오버레이)
+- **API**: `GET /api/safety-stock`, `/api/safety-stock-forecast-chart`, `/api/safety-stock-sales-by-store-period`, `/api/safety-stock-sales-by-product`, `/api/safety-stock-kpi`, `/api/safety-stock-inventory-list`, `/api/inventory-comments` (GET/POST)
+
+| 기능 | 설명 |
+|------|------|
+| 카테고리별 판매대수 | 파이 차트, 연도 선택 |
+| 상점별 3개월 판매 수량 | 연도·분기별 막대, 분기 클릭 시 상품별 차트 반영 |
+| 상품별 판매 수량 | 가로 막대, 상품 클릭 시 수요 예측 차트 표시 |
+| 수요 예측 & 적정 재고 | 2020년부터 분기별, **ARIMA(arima_model.joblib)** 전용 |
+| 과잉·위험 품목 카드 | 과잉 재고 TOP 5(수량 기준), 위험 품목 Top 5(발주량·지출 기준) |
+
+### 상점별 맞춤형 성장 전략 대시보드 (추천)
+
+- **경로**: 대시보드(3000) → `/recommendation`
+- **로직 위치**: **`model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py`**
+- **UI**: `frontend/app/recommendation/page.tsx`
+- **API**: `GET /api/store-list`, `/api/store-recommendations/{store_id}`, `/api/store-sales-forecast/{store_id}`, `/api/demand-dashboard?store_id=...&year=2024`, `/api/safety-stock-inventory-list?status_filter=Overstock`, `/api/sales-summary`, `/api/recommendation-summary`
+
+| 기능 | 설명 |
+|------|------|
+| 상점 선택 | store-list(SQL) 기반 셀렉트 |
+| 향후 30일 매출 예측 | 일별 실측 + 선형 회귀 예측 + 신뢰 구간 |
+| 안전재고·매출·수요 연동 | 과잉 재고 Top 8, 매출 요약(상점 비중), 수요 대시보드(2025 카테고리/제품 예측) |
+| 4대 추천 | 유사 상점, 연관 분석(Basket), 잠재 수요(SVD), 지역 트렌드 |
+| 추천 폴백 | 결과 없을 때 **전체 매출 기준 상위 5개 품목** 표시 |
 
 ### 데이터·공통
 
@@ -157,7 +209,7 @@ npm run dev
 
 ---
 
-## 5. 대시보드 API (모델 서버 연동)
+## 5. API 참조 (모델 서버 연동)
 
 | API | 용도 | 모델 서버 |
 |-----|------|-----------|
@@ -175,40 +227,46 @@ npm run dev
 
 ## 6. 점검·문제 해결
 
-### 재점검 체크리스트
+문제가 있을 때 **순서대로** 확인하면 원인을 빠르게 좁힐 수 있습니다.
+
+### 6.1 확인 순서 (권장)
+
+1. **1단계: 백엔드·데이터 소스**  
+   - 브라우저에서 `http://127.0.0.1:8000/api/health` 호출 → JSON이 나오면 백엔드는 기동된 상태입니다.  
+   - `GET /api/data-source` → `source`, `sql_file_count`로 **현재 어떤 소스(SQL/CSV)를 쓰는지** 확인. (로컬이면 01.data 또는 02, 배포면 02가 나와야 함.)
+2. **2단계: 통합 진단 (한 번에 확인)**  
+   - 터미널에서 `cd web-development/backend` 후 **`python main.py --integration-check`** 실행.  
+   - 로더·데이터 행 수·4개 모듈(수요·매출·안전재고·추천) 로드 여부가 한 번에 출력됩니다.  
+   - 서버를 띄울 때도 동일 진단이 자동 실행되므로, 백엔드 터미널 로그에서 `[Apple Retail API]` 메시지를 확인하면 됩니다.
+3. **3단계: API·모듈 상세**  
+   - `GET /api/quick-status` 또는 `GET /api/integration-status` → `modules_loaded`에서 prediction_model, sales_analysis, inventory_optimization, realtime_dashboard가 모두 true인지 확인.  
+   - `http://127.0.0.1:8000/docs` Swagger UI로 개별 API를 직접 호출해 응답 여부 확인.
+
+### 6.2 체크리스트 (기대값)
 
 | 항목 | 기대값 | 확인 방법 |
 |------|--------|-----------|
-| 데이터 소스 | SQL 10개 또는 CSV | `GET /api/data-source` → `source`, `sql_file_count` |
-| 로더 | 501K+ 행 | 백엔드 `load_sales_dataframe()` 반환 행 수 |
-| 모듈 로딩 | 4개 스크립트 | `GET /api/quick-status` 또는 `/api/integration-status` → `modules_loaded` |
+| 데이터 소스 | sql (또는 csv) | `GET /api/data-source` → `source`, `sql_file_count` |
+| 로더 행 수 | 0 초과 (로컬 예: 501K+ 등) | `python main.py --integration-check` 또는 백엔드 로그 |
+| 모듈 로딩 | 4개 모두 true | `GET /api/quick-status` 또는 `/api/integration-status` → `modules_loaded` |
 
-재점검 예 (백엔드 디렉터리):
+**진단만 실행할 때 (서버 없이):**
+
+```powershell
+cd web-development\backend
+python main.py --integration-check
+```
+
+**데이터 소스·행 수만 확인할 때:**
 
 ```powershell
 cd web-development\backend
 python -c "import main; print(main.get_data_source_info()); print('rows', len(main.load_sales_dataframe() or []))"
 ```
 
-또는 `python main.py --integration-check` 로 로더·데이터·모듈 상태 확인.
+**데이터 흐름 요약**: (로컬) `01.data/*.sql` 또는 `02.Database for dashboard/*.sql` → `load_sales_dataframe()` → 단일 DataFrame → prediction/Sales/Inventory/Real-time 모듈 → main.py `/api/*` → 프론트엔드.
 
-**연동 진단 (main.py 통합)**  
-진단 로직은 `backend/main.py`에만 있습니다. 서버 기동 시 자동으로 `_run_integration_report()`가 실행되어 터미널에 진단 로그가 출력됩니다. 서버 없이 진단만 실행하려면 `cd web-development/backend` 후 `python main.py --integration-check`를 실행하세요.
-
-| 항목 | 기대 상태 | 비고 |
-|------|-----------|------|
-| MODEL_SERVER | 존재 | `model-server/` |
-| load_sales_data.py | OK | load_sales_dataframe, get_data_source_info |
-| 데이터 소스 | sql | SQL 10개 파일 (01~10) |
-| 로드 행 수 | 501,548행 | 정상 |
-| prediction model | OK | get_demand_dashboard_data |
-| Sales / Inventory / Real-time | 존재 | 04·05·06 폴더 내 해당 .py |
-
-**API 연동 상태** (`GET /api/integration-status`): load_sales_data, prediction_model, sales_analysis, inventory_optimization, realtime_dashboard 로드 여부 및 스모크 값(forecast_total_quantity, sales_store_count 등) 확인.
-
-**데이터 흐름**: `01.data/*.sql` → `load_sales_dataframe()` → DataFrame → prediction/Sales/Inventory/Real-time 모듈 → main.py API → 프론트엔드.
-
-### 대시보드에 데이터가 안 나올 때
+### 6.3 증상별 해결 (대시보드에 데이터가 안 나올 때)
 
 - **"백엔드 확인 중..." 만 보임**  
   백엔드(8000)를 **먼저** 실행하세요. `http://127.0.0.1:8000/api/health` 에서 JSON 확인 후 프론트 재시작.
@@ -229,49 +287,50 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 - **예측이 linear_trend만 나옴**  
   ARIMA 모델(`model-server/03.prediction model/arima_model.joblib`) 존재 여부 확인. 필요 시 `pip install statsmodels` 후 백엔드 재시작.
 
+- **배포(HF Space)에서 데이터 없음**  
+  배포용은 **02.Database for dashboard**만 사용하는지 확인. Dockerfile에 `ENV USE_DASHBOARD_SQL=1`이 있고, 해당 폴더에 `*.sql`이 포함되어 있는지 확인. `HF_SPACE_CHECK.md` 참고.
+
 ---
 
-## 7. 주요 파일 빠른 참조
+## 7. 참조 (주요 파일·다음 작업·관련 문서)
+
+**주요 파일**
 
 | 목적 | 파일 |
 |------|------|
-| 안전재고 로직·ARIMA·분기 집계 | `model-server/05.Inventory Optimization/Inventory Optimization.py` |
-| 추천 4종·매출 예측·상위 5개 폴백 | `model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py` |
-| 안전재고·추천·수요·매출 API | `web-development/backend/main.py` |
-| 메인 대시보드·안전재고 오버레이 | `frontend/app/page.tsx` |
-| 추천 대시보드 (상점별 성장 전략) | `frontend/app/recommendation/page.tsx` |
-| 매출 대시보드 (연도·매장·분기별) | `frontend/app/sales/page.tsx` |
-| **실행 스크립트·작업 순서 주석** | **`web-development/start.ps1`** |
-| ARIMA 모델 | `model-server/03.prediction model/arima_model.joblib` |
+| 수요 예측·ARIMA | `model-server/03.prediction model/prediction model.py`, `arima_model.joblib` |
+| 매출 집계·분기 | `model-server/04.Sales analysis/Sales analysis.py` |
+| 안전재고·재고 파이프라인 | `model-server/05.Inventory Optimization/Inventory Optimization.py` |
+| 추천·성장 전략 | `model-server/06.Real-time execution and performance dashboard/Real-time execution and performance dashboard.py` |
+| API 라우트 | `web-development/backend/main.py` |
+| 메인·수요·안전재고 UI | `frontend/app/page.tsx` |
+| 매출·추천 UI | `frontend/app/sales/page.tsx`, `frontend/app/recommendation/page.tsx` |
+| 실행·작업 순서 | `web-development/start.ps1` |
+
+**다음에 이어서 할 수 있는 것**  
+안전재고: 분기·폴백 조정, 새 API 시 `Inventory Optimization.py` 추가 후 `main.py` 라우트 등록. 추천: 4대 엔진·폴백 N개 조정. 수요: `prediction model.py` ↔ `/api/demand-dashboard` 연동 확인. **테스트**: `TDD.md` 참고(pytest·Jest 엄격 스위트).
+
+**관련 문서**  
+`web-development/README.md`(실행·대시보드 요약), `TDD.md`(테스트), `VERCEL_GITHUB_SETUP.md`(Vercel), `web-development/backend/HF_SPACE_CHECK.md`(HF 배포 점검).
 
 ---
 
-## 8. 다음에 이어서 할 수 있는 것
-
-- 안전재고: 분기 라벨·폴백 로직 조정, 새 API 시 `Inventory Optimization.py` 추가 후 `main.py` 라우트 등록
-- 추천: 4대 엔진 파라미터 조정, 폴백 상위 N개 변경 시 `_get_top5_product_names`·`_fallback_*` 수정
-- 수요 대시보드: `prediction model.py` ↔ `main.py` `/api/demand-dashboard` 연동 확인
-
-이 문서는 작업하면서 필요 시 업데이트하면 됩니다.
-
----
-
-## 9. 안정화 및 최근 작업 정리
+## 8. 안정화 요약
 
 전체적으로 안정화한 내용과 역할 분리·데이터 소스 정리를 한 번에 참고할 수 있도록 정리한 요약입니다. 상세 작업 순서는 **`start.ps1` 상단 [지금까지 작업 순서]** 주석을 참고하세요.
 
-### 9.1 데이터·역할 분리 원칙
+### 8.1 데이터·역할 분리 원칙
 
 | 구분 | 위치 | 역할 |
 |------|------|------|
-| 데이터 로드 | `model-server/load_sales_data.py` | SQL(01.data/*.sql) 우선, CSV 폴백. 모든 모듈 동일 소스 사용. |
+| 데이터 로드 | `model-server/load_sales_data.py` | 로컬: 01.data 우선. 배포: USE_DASHBOARD_SQL=1 시 02.Database for dashboard 우선. 모든 모듈 동일 소스. |
 | 예측 | `model-server/03.prediction model/` (arima_model.joblib 등) | 수요·매출 예측. |
 | 매출 집계·분기·매장명 매칭 | `model-server/04.Sales analysis/Sales analysis.py` | 매출 대시보드 전용 로직. |
 | 안전재고·수요 예측 차트 | `model-server/05.Inventory Optimization/Inventory Optimization.py` | 안전재고 대시보드 전용. |
 | 추천·성과·퍼널 | `model-server/06.Real-time execution and performance dashboard/` | 추천 대시보드·피드백 루프. |
 | API 라우트·폴백 | `web-development/backend/main.py` | 위 모듈 import 후 라우트만 제공. |
 
-### 9.2 매출 대시보드 안정화
+### 8.2 매출 대시보드 안정화
 
 - **API 호출**: `frontend/lib/api.ts` — `apiGet`/`apiPost` 시 **항상 상대경로(`''`) 먼저** 시도 후 `NEXT_PUBLIC_API_URL`, `localhost:8000` 순. CORS 회피·매출/추천 로드 안정화.
 - **로딩 타임아웃**: `app/sales/page.tsx` — 로딩 15초 초과 시 강제 해제 → "다시 시도" 표시.
@@ -280,13 +339,13 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
   - `_extract_store_name_for_match()` 후보에 "Apple SoHo", "Store SoHo" 등 추가  
   - 대소문자 무시 비교로 "소호(SoHo)" 클릭 시 분기별·카테고리별 차트 정상 표시  
 
-### 9.3 추천·안전재고·기타
+### 8.3 추천·안전재고·기타
 
 - **추천 대시보드**: 상점 목록 12초 타임아웃·재시도·에러 시 "다시 불러오기". 샘플/시뮬레이션 구간은 카드 테두리·뱃지·설명으로 구분.
 - **데이터 소스 표시**: 대시보드에서 "데이터: SQL · 예측: arima_model.joblib" 등 명시.
 - **실행**: `web-development/start.ps1` 실행 → 백엔드(8000) → 프론트(3000). 작업 이력은 **start.ps1 상단 주석**에 순서대로 기록됨.
 
-### 9.4 오늘 작업 정리 (수요·안전재고 대시보드, 배포 점검)
+### 8.4 최근 작업 정리 (수요·안전재고 대시보드, 배포 점검)
 
 - **가상환경 및 통합 점검**
   - 프로젝트 루트에 `.venv` 가상환경 생성 후, `web-development/backend/requirements.txt` 기준으로 백엔드 의존성을 설치했습니다.
@@ -316,9 +375,9 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
 
 ---
 
-## 10. 기술 스택 및 구성 요소 명세
+## 9. 기술 스택 및 구성 요소 명세
 
-### 10.1 프론트엔드 (대시보드 UI)
+### 9.1 프론트엔드 (대시보드 UI)
 
 - **프레임워크**
   - **Next.js 14 (`next@14.2.24`)**: App Router 기반, `app/` 디렉터리 구조.
@@ -337,7 +396,7 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
   - 개발 서버: `cd web-development/frontend && npm install && npm run dev`
   - 프로덕션 빌드: `cd web-development/frontend && npm run build`
 
-### 10.2 백엔드 API (FastAPI)
+### 9.2 백엔드 API (FastAPI)
 
 - **런타임 / 서버**
   - **Python (프로젝트 기준 3.13 호환)**: 가상환경 `.venv` 에서 동작.
@@ -353,10 +412,11 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
     - `/api/sales-summary`, `/api/safety-stock`, `/api/store-recommendations/{store_id}` 등 API 라우트 정의.
     - 각 라우트는 `model-server/` 하위 모듈(수요·매출·안전재고·추천)을 import 해서 호출만 담당.
   - 공통 데이터 로더: `model-server/load_sales_data.py`  
-    - `01.data/*.sql` 및 `02.Database for dashboard/*.sql` 을 파싱해 `sales_data` 테이블을 DataFrame 으로 로드.
+    - **로컬**: `01.data/*.sql` 우선 → 없으면 `02.Database for dashboard/*.sql` 폴백.  
+    - **배포**: `USE_DASHBOARD_SQL=1` 설정 시 **`02.Database for dashboard/*.sql` 우선** 사용(배포 시 문제 방지). 파싱해 `sales_data` 테이블을 DataFrame 으로 로드.
     - 모든 분석/대시보드 모듈이 **동일한 DataFrame**을 사용하도록 통일.
 
-### 10.3 모델 서버 / 분석 모듈
+### 9.3 모델 서버 / 분석 모듈
 
 - **수요 예측·수요 대시보드**
   - 모듈: `model-server/03.prediction model/prediction model.py`
@@ -392,7 +452,7 @@ python -c "import main; print(main.get_data_source_info()); print('rows', len(ma
     - `StoreGrowthStrategyEngine` / `get_store_growth_strategy_recommendations()` — 상점별 성장 전략 엔진 (브랜드/이익/재고 회전 가중치 기반).
     - 퍼널·성과 시뮬레이터: `get_customer_journey_funnel()`, `get_funnel_stage_weight()`, `get_performance_simulator()`.
 
-### 10.4 인프라 / 배포 파이프라인
+### 9.4 인프라 / 배포 파이프라인
 
 - **프론트엔드 (Vercel)**
   - 설정 파일: `web-development/frontend/vercel.json`

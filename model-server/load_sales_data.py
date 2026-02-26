@@ -1,21 +1,21 @@
 """
 모델 서버 공통 판매 데이터 로더.
 
-- 데이터 소스: model-server/01.data/*.sql (Apple_Retail_Sales_Dataset_Modified_01~10.sql) 만 사용
-- CSV 파일은 참고하지 않음 (SQL 전용)
+- 로컬: 01.data/*.sql 우선 → 02.Database for dashboard 폴백 → CSV
+- 배포(Hugging Face 등): 환경 변수 USE_DASHBOARD_SQL=1 설정 시 02.Database for dashboard 우선 사용.
+  → 대용량 01.data SQL 업로드 없이 경량 SQL만으로 배포 가능.
 
-모든 모델(02 예측, 03 매출, 04 재고, 05 추천)이 동일한 데이터 소스를 사용하도록
-load_sales_dataframe() 하나로 통일합니다.
-
+모든 모델(예측, 매출, 재고, 추천)이 동일한 데이터 소스를 사용하도록 load_sales_dataframe() 하나로 통일.
 - 수량 단위: QUANTITY_UNIT (가격탄력성 등 데이터 준비용)
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+import os
 import re
 import csv
 import io
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -26,6 +26,11 @@ _CACHE_DF: Optional[pd.DataFrame] = None
 
 # 수량 단위 (가격탄력성 등 데이터 준비용)
 QUANTITY_UNIT = "대"
+
+# 배포 시 02.Database for dashboard 우선 사용 (Hugging Face 등에서 설정)
+def _use_dashboard_sql_first() -> bool:
+    v = os.environ.get("USE_DASHBOARD_SQL", "").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def _strip_wrapping_quotes(s: str) -> str:
@@ -53,12 +58,23 @@ def _normalize_text_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_data_source_info() -> Dict[str, Any]:
-    """현재 데이터가 어디서 로드되는지(02.Database for dashboard / 01.data SQL / CSV) 반환."""
+    """현재 데이터가 어디서 로드되는지 반환. 배포(USE_DASHBOARD_SQL=1)면 02 우선, 아니면 01.data 우선."""
+    data_dir_01 = _MODEL_SERVER / "01.data"
     dashboard_dir = _MODEL_SERVER / "02.Database for dashboard"
-    sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
-    sql_dir = dashboard_dir if sql_files else (_MODEL_SERVER / "01.data")
-    if not sql_files:
-        sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
+    use_dashboard_first = _use_dashboard_sql_first()
+
+    if use_dashboard_first:
+        sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+        sql_dir = dashboard_dir
+        if not sql_files:
+            sql_files = sorted(data_dir_01.glob("*.sql")) if data_dir_01.exists() else []
+            sql_dir = data_dir_01 if sql_files else dashboard_dir
+    else:
+        sql_files = sorted(data_dir_01.glob("*.sql")) if data_dir_01.exists() else []
+        sql_dir = data_dir_01
+        if not sql_files:
+            sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+            sql_dir = dashboard_dir if sql_files else data_dir_01
 
     csv_candidates = [
         _MODEL_SERVER / "data" / "Apple_Retail_Sales_Dataset_Modified.csv",
@@ -207,12 +223,23 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
     if _CACHE_DF is not None and not force_reload:
         return _CACHE_DF
 
-    # 배포용 경량 데이터 우선 (Hugging Face 등): 02.Database for dashboard
+    # 로컬: 01.data 우선. 배포(USE_DASHBOARD_SQL=1): 02.Database for dashboard 우선.
+    data_dir_01 = _MODEL_SERVER / "01.data"
     dashboard_dir = _MODEL_SERVER / "02.Database for dashboard"
-    sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
-    if not sql_files:
-        sql_dir = _MODEL_SERVER / "01.data"
-        sql_files = sorted(sql_dir.glob("*.sql")) if sql_dir.exists() else []
+    use_dashboard_first = _use_dashboard_sql_first()
+
+    if use_dashboard_first:
+        sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+        sql_dir = dashboard_dir
+        if not sql_files:
+            sql_files = sorted(data_dir_01.glob("*.sql")) if data_dir_01.exists() else []
+            sql_dir = data_dir_01 if sql_files else dashboard_dir
+    else:
+        sql_files = sorted(data_dir_01.glob("*.sql")) if data_dir_01.exists() else []
+        sql_dir = data_dir_01
+        if not sql_files:
+            sql_files = sorted(dashboard_dir.glob("*.sql")) if dashboard_dir.exists() else []
+            sql_dir = dashboard_dir if sql_files else data_dir_01
 
     df: Optional[pd.DataFrame] = None
     if sql_files:
@@ -233,10 +260,11 @@ def load_sales_dataframe(force_reload: bool = False) -> Optional[pd.DataFrame]:
 
     if df is None or getattr(df, "empty", True):
         # Hugging Face 등 배포 환경에서 원인 파악용 로그 (SQL/CSV 모두 없을 때)
+        dashboard_dir = _MODEL_SERVER / "02.Database for dashboard"
         print(
             f"[load_sales_data] 데이터 없음. 시도 경로: "
+            f"01.data={data_dir_01.exists()}, "
             f"02.Database for dashboard={dashboard_dir.exists()}, "
-            f"01.data={(_MODEL_SERVER / '01.data').exists()}, "
             f"sql_files={len(sql_files) if sql_files else 0}개"
         )
         _CACHE_DF = None

@@ -8,15 +8,15 @@
   - `_MODEL_SERVER` = **`/app/model-server`**
 - **load_sales_data.py** 경로: `/app/model-server/load_sales_data.py`
   - 내부 `_MODEL_SERVER` = `Path(__file__).parent` = **`/app/model-server`**
-  - 데이터 탐색: `02.Database for dashboard/*.sql` → 없으면 `01.data/*.sql` → 없으면 CSV 후보
+  - 데이터 탐색: **배포 시** `USE_DASHBOARD_SQL=1`(Dockerfile 설정) → `02.Database for dashboard/*.sql` 우선. 로컬은 01.data 우선 → 02 폴백 → CSV.
 
 ## 점검 항목
 
 | 항목 | 기대 | 확인 방법 |
 |------|------|-----------|
 | load_sales_data.py | `/app/model-server/load_sales_data.py` 존재 | Dockerfile RUN에서 검사 (없으면 빌드 실패) |
-| 02.Database for dashboard | `dashboard_sales_data.sql` 등 *.sql 존재 | HF Space 로그에서 `[load_sales_data] 데이터 없음` 여부 확인 |
-| 01.data (폴백) | `Apple_Retail_Sales_Dataset_Modified_01.sql` 등 | 위와 동일 |
+| 02.Database for dashboard (배포용) | `dashboard_sales_data.sql` 등 *.sql | **배포 시** `USE_DASHBOARD_SQL=1`로 이 폴더 우선 사용. HF Space는 Dockerfile에 설정됨. |
+| 01.data (로컬 우선) | `Apple_Retail_Sales_Dataset_Modified_01.sql` 등 | 로컬에서만 우선. 배포 시 .hfignore로 제외 가능. |
 | main.py 로더 연동 | startup 시 "load_sales_dataframe: OK" | Space 로그의 "모델 서버 연동 진단" 블록 확인 |
 
 ## Space 로그에서 확인할 메시지
