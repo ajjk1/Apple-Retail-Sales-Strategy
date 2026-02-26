@@ -505,10 +505,6 @@ export default function Home() {
   const [overstockTop5ByQty, setOverstockTop5ByQty] = useState<
     { product_name: string; current_inventory: number; target_inventory: number; overstock_qty: number; overstock_pct: number; savings_amount: number }[]
   >([]);
-  /** 위험 품목 top 5: 순위·상품명·현재재고·목표재고·발주량·지출 금액 (DB 기준) */
-  const [riskyItemsTop5, setRiskyItemsTop5] = useState<
-    { rank: number; product_name: string; current_inventory: number; target_inventory: number; order_quantity: number; expenditure: number }[]
-  >([]);
   /** 상태 필터: '' | '위험' | '과잉' (한글) */
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState<string>('');
   /** 관리자 코멘트: 선택된 매장명 */
@@ -857,13 +853,6 @@ export default function Home() {
       if (Array.isArray(json)) setOverstockTop5ByQty(json);
       else setOverstockTop5ByQty([]);
     }).catch(() => setOverstockTop5ByQty([]));
-    // 위험 품목 top 5 (발주량·지출 금액 기준, DB)
-    apiGet<{ rank: number; product_name: string; current_inventory: number; target_inventory: number; order_quantity: number; expenditure: number }[]>(
-      '/api/safety-stock-risky-items-top5'
-    ).then((json) => {
-      if (Array.isArray(json)) setRiskyItemsTop5(json);
-      else setRiskyItemsTop5([]);
-    }).catch(() => setRiskyItemsTop5([]));
   }, [showSafetyStockDashboard, inventoryStatusFilter]);
 
   // 매장별 재고 목록/필터 변경 시, 선택 매장이 목록에 없으면 선택 해제 (동기화)
@@ -1874,79 +1863,9 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 위험 품목 TOP 5: 과잉 재고 TOP 5와 동일한 카드·테이블 디자인 (순위·상품명·현재재고·목표재고·발주량·지출 금액) */}
-                  {riskyItemsTop5.length > 0 && (
-                    <div className="mb-6 rounded-xl border border-gray-200 bg-white p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                        <div>
-                          <h3 className="text-sm font-semibold text-[#1d1d1f]">위험 품목 TOP 5</h3>
-                          <p className="text-xs text-[#86868b] mt-0.5">
-                            현재 재고가 목표 재고(안전 재고)보다 낮은 상품 중, 발주 필요량·예상 지출 금액 기준 상위 5개입니다.
-                          </p>
-                        </div>
-                        <span className="text-[10px] px-2 py-1 rounded bg-gray-100 text-[#6e6e73] border border-gray-200">기준: 실데이터</span>
-                      </div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm border-collapse">
-                          <thead>
-                            <tr className="border-b border-gray-200 text-left text-[#6e6e73]">
-                              <th className="py-2 pr-3 font-medium w-12">순위</th>
-                              <th className="py-2 pr-3 font-medium">상품명</th>
-                              <th className="py-2 pr-3 font-medium text-right">현재 재고</th>
-                              <th className="py-2 pr-3 font-medium text-right">목표 재고</th>
-                              <th className="py-2 pr-3 font-medium text-right">발주량</th>
-                              <th className="py-2 pl-3 font-medium text-right">지출 금액</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {riskyItemsTop5.map((row) => {
-                              const current = Number(row.current_inventory) ?? 0;
-                              const target = Number(row.target_inventory) ?? 0;
-                              const orderQty = Number(row.order_quantity) ?? 0;
-                              const currentPct = target > 0 ? (current / target) * 100 : 0;
-                              const needPct = target > 0 ? (orderQty / target) * 100 : 0;
-                              return (
-                                <tr key={row.rank} className="border-b border-gray-100 hover:bg-gray-50/50">
-                                  <td className="py-3 pr-3 text-[#1d1d1f] font-medium">{row.rank}</td>
-                                  <td className="py-3 pr-3">
-                                    <div>
-                                      <span className="text-[#1d1d1f] font-medium">{row.product_name || '—'}</span>
-                                      {target > 0 && (
-                                        <div className="mt-1.5 w-full max-w-xs h-2 rounded-full bg-gray-100 overflow-hidden flex">
-                                        <div
-                                          className="h-full bg-[#34c759] shrink-0"
-                                          style={{ width: `${Math.min(currentPct, 100)}%` }}
-                                          title="현재 재고"
-                                        />
-                                        <div
-                                          className="h-full bg-[#dc2626] shrink-0"
-                                          style={{ width: `${Math.min(needPct, 100)}%` }}
-                                          title="발주 필요"
-                                        />
-                                        </div>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{current.toLocaleString()}</td>
-                                  <td className="py-3 pr-3 text-right text-[#1d1d1f]">{target.toLocaleString()}</td>
-                                  <td className="py-3 pr-3 text-right">
-                                    <span className="text-red-700 font-medium">{orderQty.toLocaleString()}</span>
-                                  </td>
-                                  <td className="py-3 pl-3 text-right text-red-700 font-medium">
-                                    ₩{(row.expenditure ?? 0).toLocaleString()}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* 위험 품목: 차트 & 관리자 코멘트 */}
+                  {/* 위험 품목: 차트 */}
                   {dangerTop5.length > 0 && (
-                    <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="mb-6">
                       <div className="rounded-xl border border-gray-200 bg-white p-4">
                         <h3 className="text-sm font-semibold text-[#1d1d1f] mb-1">위험 품목</h3>
                         <p className="text-xs text-[#86868b] mb-3">
@@ -1998,17 +1917,6 @@ export default function Home() {
                               />
                             </BarChart>
                           </ResponsiveContainer>
-                        </div>
-                      </div>
-                      <div className="rounded-xl border border-gray-200 bg-white p-4 flex flex-col">
-                        <h3 className="text-sm font-semibold text-[#1d1d1f] mb-2">위험 품목 관리자 코멘트</h3>
-                        <p className="text-xs text-[#86868b] mb-3">
-                          재고 부족 위험이 높은 품목에 대해 발주·입고 계획을 기록하는 영역입니다.
-                        </p>
-                        <div className="text-xs text-[#1d1d1f] bg-[#f5f5f7] border border-gray-200 rounded-lg p-3 leading-relaxed">
-                          <p className="font-medium mb-1">예시 코멘트</p>
-                          <p className="mb-1">- 본사 물류창고에 긴급 재고 요청 완료 (2/25 도착 예정)</p>
-                          <p>- A 벤더사에 긴급 발주 넣었음</p>
                         </div>
                       </div>
                     </div>
