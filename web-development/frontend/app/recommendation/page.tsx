@@ -484,12 +484,14 @@ export default function RecommendationPage() {
       .catch(() => setFunnelStageWeights(null));
   }, []);
 
-  // 성과 시뮬레이터 (투자자용 실효성 증명)
+  // 성과 시뮬레이터 (투자자용 실효성 증명) — 선택된 엔진에 따라 backend 시뮬레이터 엔진 파라미터 연동
   useEffect(() => {
-    apiGet<PerformanceSimulatorData>('/api/performance-simulator')
+    const engine = selectedEngineKey;
+    const param = engine ? `?engine=${encodeURIComponent(engine)}` : '';
+    apiGet<PerformanceSimulatorData>(`/api/performance-simulator${param}`)
       .then((data) => data && setPerformanceSimulator(data))
       .catch(() => setPerformanceSimulator(null));
-  }, []);
+  }, [selectedEngineKey]);
 
   // 선택된 퍼널 단계에 따른 가중치·전략 (선택 변경 시 재조회)
   const funnelStageDetail = useMemo(() => {
