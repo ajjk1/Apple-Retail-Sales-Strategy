@@ -1814,47 +1814,9 @@ def calculate_roi_opportunity_cost(
     }
 
 
-_PERFORMANCE_ENGINE_PROFILES: Dict[str, Dict[str, float]] = {
-    # Association Engine: 교차판매 강화 → 매출 상승은 중간, 반품 감소/회전 가속은 보통
-    "association": {
-        "sales_lift_multiplier": 0.7,
-        "return_reduction_multiplier": 0.9,
-        "turnover_multiplier": 0.8,
-        "roi_multiplier": 0.8,
-        "lift_rate": 1.08,
-    },
-    # Similar Store: 유사 매장 벤치마킹 → 안정적인 상승, 회전 속도는 약간 가속
-    "similar_store": {
-        "sales_lift_multiplier": 0.9,
-        "return_reduction_multiplier": 1.0,
-        "turnover_multiplier": 0.9,
-        "roi_multiplier": 0.9,
-        "lift_rate": 1.12,
-    },
-    # Latent Demand: 잠재 수요 발굴 → 가장 공격적인 성장 시나리오 (기존 기본값과 동일하게 유지)
-    "latent_demand": {
-        "sales_lift_multiplier": 1.0,
-        "return_reduction_multiplier": 1.0,
-        "turnover_multiplier": 1.0,
-        "roi_multiplier": 1.0,
-        "lift_rate": 1.15,
-    },
-    # Trend: 성장률 기반 트렌드 엔진 → 매출/회전 가속에 강점, 반품 감소 효과는 보통
-    "trend": {
-        "sales_lift_multiplier": 1.1,
-        "return_reduction_multiplier": 0.95,
-        "turnover_multiplier": 1.1,
-        "roi_multiplier": 1.05,
-        "lift_rate": 1.18,
-    },
-}
-
-
-def get_performance_simulator(engine: Optional[str] = None) -> Dict[str, Any]:
+def get_performance_simulator() -> Dict[str, Any]:
     """
     성과 시뮬레이터 통합 응답: Scenario + ROI + Visual Summary(매출 상승률, 반품 감소율, 재고 회전 가속도).
-    - engine: association | similar_store | latent_demand | trend (소문자 스네이크 케이스)
-      · None 또는 알 수 없는 값이면 기존 기본 시나리오(latent_demand 기반)를 그대로 사용.
     """
     scenario = generate_performance_scenario()
     roi = calculate_roi_opportunity_cost(
@@ -1869,41 +1831,11 @@ def get_performance_simulator(engine: Optional[str] = None) -> Dict[str, Any]:
     return_rate_reduction_pct = round(
         (SIMULATOR_RETURN_RATE_BEFORE - SIMULATOR_RETURN_RATE_AFTER) / SIMULATOR_RETURN_RATE_BEFORE * 100.0, 1
     )
-    inventory_turnover_acceleration = round((365.0 / 30.0) / (365.0 / 90.0) - 1.0, 2)
-    inventory_turnover_acceleration_pct = round(
-        inventory_turnover_acceleration * 100.0, 1
+    inventory_turnover_acceleration = round(
+        (365.0 / 30.0) / (365.0 / 90.0) - 1.0, 2
     )
-
-    engine_key = (engine or "").strip().lower()
-    profile = _PERFORMANCE_ENGINE_PROFILES.get(engine_key)
-
-    # 엔진별 프로필이 지정된 경우: 요약 지표·ROI·성장 곡선 강도를 엔진 특성에 맞게 스케일링
-    if profile is not None:
-        total_sales_lift_pct = round(
-            total_sales_lift_pct * profile.get("sales_lift_multiplier", 1.0), 1
-        )
-        return_rate_reduction_pct = round(
-            return_rate_reduction_pct * profile.get("return_reduction_multiplier", 1.0),
-            1,
-        )
-        inventory_turnover_acceleration_pct = round(
-            inventory_turnover_acceleration_pct
-            * profile.get("turnover_multiplier", 1.0),
-            1,
-        )
-        roi = {
-            **roi,
-            "opportunity_cost_saved_annual": round(
-                roi.get("opportunity_cost_saved_annual", 0.0)
-                * profile.get("roi_multiplier", 1.0),
-                2,
-            ),
-        }
-        lift_rate = profile.get("lift_rate", 1.15)
-    else:
-        # 기존 동작과의 호환성: 엔진 미지정 시 latent_demand 기준(1.15) 유지
-        lift_rate = 1.15
-
+    inventory_turnover_acceleration_pct = round(inventory_turnover_acceleration * 100.0, 1)
+    lift_rate = 1.15
     periods = scenario["before"]["periods"]
     baseline = scenario["before"]["sales"]
     growth_15pct = [round(b * lift_rate, 1) for b in baseline]

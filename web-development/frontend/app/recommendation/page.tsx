@@ -335,6 +335,86 @@ export default function RecommendationPage() {
     }
   }, [filteredStores, selectedStoreId]);
 
+  /** 엔진 선택에 따른 성과 시뮬레이터 지표 (총 매출/반품/재고/ROI) */
+  const enginePerformance = useMemo(() => {
+    if (!performanceSimulator) {
+      return {
+        totalSalesLiftPct: 0,
+        returnRateReductionPct: 0,
+        inventoryTurnoverAccelPct: 0,
+        opportunityCostSavedAnnual: 0,
+      };
+    }
+
+    const baseTotal = performanceSimulator.summary?.total_sales_lift_pct ?? 0;
+    const baseReturn = performanceSimulator.summary?.return_rate_reduction_pct ?? 0;
+    const baseTurnover = performanceSimulator.summary?.inventory_turnover_acceleration_pct ?? 0;
+    const baseRoi = performanceSimulator.roi?.opportunity_cost_saved_annual ?? 0;
+
+    type EngineKey = 'association' | 'similar_store' | 'latent_demand' | 'trend';
+    const key: EngineKey | 'baseline' = (selectedEngineKey as EngineKey | null) ?? 'baseline';
+
+    const WEIGHTS: Record<'baseline' | EngineKey, { sales: number; returns: number; turnover: number; roi: number }> = {
+      baseline: { sales: 1, returns: 1, turnover: 1, roi: 1 },
+      association: { sales: 1.1, returns: 1.05, turnover: 1.1, roi: 1.0 },
+      similar_store: { sales: 1.3, returns: 1.0, turnover: 1.1, roi: 1.2 },
+      latent_demand: { sales: 1.8, returns: 1.2, turnover: 1.5, roi: 1.5 },
+      trend: { sales: 1.5, returns: 1.0, turnover: 1.8, roi: 1.3 },
+    };
+
+    const w = WEIGHTS[key] ?? WEIGHTS.baseline;
+    const totalSalesLiftPct = Number((baseTotal * w.sales).toFixed(1));
+    const returnRateReductionPct = Number((baseReturn * w.returns).toFixed(1));
+    const inventoryTurnoverAccelPct = Number((baseTurnover * w.turnover).toFixed(1));
+    const opportunityCostSavedAnnual = Math.round(baseRoi * w.roi);
+
+    return {
+      totalSalesLiftPct,
+      returnRateReductionPct,
+      inventoryTurnoverAccelPct,
+      opportunityCostSavedAnnual,
+    };
+  }, [performanceSimulator, selectedEngineKey]);
+
+  /** 엔진 선택에 따른 주차별 매출 (엔진 적용 전 vs 후) 시나리오 */
+  const engineScenarioChartData = useMemo(() => {
+    if (!performanceSimulator?.scenario?.chart_data || !performanceSimulator.scenario.chart_data.length) {
+      return performanceSimulator?.scenario?.chart_data ?? [];
+    }
+
+    const baseData = performanceSimulator.scenario.chart_data;
+    const baseLift = performanceSimulator.summary?.total_sales_lift_pct ?? 0;
+    const targetLift = enginePerformance.totalSalesLiftPct;
+
+    if (!baseLift || !targetLift || baseLift === targetLift) {
+      return baseData;
+    }
+
+    const factor = (100 + targetLift) / (100 + baseLift);
+
+    return baseData.map((row) => ({
+      ...row,
+      sales_after: Math.round(((row as { sales_after?: number }).sales_after ?? 0) * factor),
+    }));
+  }, [performanceSimulator, enginePerformance.totalSalesLiftPct]);
+
+  /** 엔진 선택에 따른 Performance Lift 곡선 (기존 vs 성장) */
+  const enginePerformanceLiftChartData = useMemo(() => {
+    const base = performanceSimulator?.performance_lift;
+    if (!base?.chart_data || !base.chart_data.length) return base?.chart_data ?? [];
+
+    const baseLiftRate = base.lift_rate ?? 1.15;
+    const targetLiftRate = 1 + (enginePerformance.totalSalesLiftPct || 0) / 100;
+    if (!baseLiftRate || baseLiftRate === targetLiftRate) return base.chart_data;
+
+    const factor = targetLiftRate / baseLiftRate;
+
+    return base.chart_data.map((row) => ({
+      ...row,
+      성장_곡선_15: Math.round((row.성장_곡선_15 ?? 0) * factor),
+    }));
+  }, [performanceSimulator, enginePerformance.totalSalesLiftPct]);
+
   useEffect(() => {
     if (feedbackProductList.length) {
       setFeedbackClicks((prev) => {
@@ -484,14 +564,12 @@ export default function RecommendationPage() {
       .catch(() => setFunnelStageWeights(null));
   }, []);
 
-  // 성과 시뮬레이터 (투자자용 실효성 증명) — 선택된 엔진에 따라 backend 시뮬레이터 엔진 파라미터 연동
+  // 성과 시뮬레이터 (투자자용 실효성 증명)
   useEffect(() => {
-    const engine = selectedEngineKey;
-    const param = engine ? `?engine=${encodeURIComponent(engine)}` : '';
-    apiGet<PerformanceSimulatorData>(`/api/performance-simulator${param}`)
+    apiGet<PerformanceSimulatorData>('/api/performance-simulator')
       .then((data) => data && setPerformanceSimulator(data))
       .catch(() => setPerformanceSimulator(null));
-  }, [selectedEngineKey]);
+  }, []);
 
   // 선택된 퍼널 단계에 따른 가중치·전략 (선택 변경 시 재조회)
   const funnelStageDetail = useMemo(() => {
@@ -925,21 +1003,21 @@ export default function RecommendationPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <p className="text-xs text-[#86868b] mb-1">총 매출 상승률</p>
                 <p className="text-2xl font-bold text-[#0071e3]">
-                  +{performanceSimulator.summary?.total_sales_lift_pct ?? 0}%
+                  +{enginePerformance.totalSalesLiftPct}%
                 </p>
                 <p className="text-xs text-[#6e6e73] mt-1">엔진 적용 후 시뮬레이션</p>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <p className="text-xs text-[#86868b] mb-1">반품 감소율</p>
                 <p className="text-2xl font-bold text-emerald-600">
-                  {performanceSimulator.summary?.return_rate_reduction_pct ?? 0}%
+                  {enginePerformance.returnRateReductionPct}%
                 </p>
                 <p className="text-xs text-[#6e6e73] mt-1">호환/COO 필터 효과</p>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
                 <p className="text-xs text-[#86868b] mb-1">재고 회전 가속도</p>
                 <p className="text-2xl font-bold text-amber-600">
-                  +{performanceSimulator.summary?.inventory_turnover_acceleration_pct ?? 0}%
+                  +{enginePerformance.inventoryTurnoverAccelPct}%
                 </p>
                 <p className="text-xs text-[#6e6e73] mt-1">90일 → 30일 가정</p>
               </div>
@@ -949,7 +1027,7 @@ export default function RecommendationPage() {
               <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200">
                 <p className="text-sm font-semibold text-emerald-800">💰 기회비용 절감 (ROI)</p>
                 <p className="text-xl font-bold text-emerald-700 mt-1">
-                  연간 ${(performanceSimulator.roi.opportunity_cost_saved_annual / 1000).toFixed(1)}K 절감
+                  연간 ${(enginePerformance.opportunityCostSavedAnnual / 1000).toFixed(1)}K 절감
                 </p>
                 <p className="text-xs text-emerald-700 mt-1">
                   재고령 {performanceSimulator.roi.old_days}일 → {performanceSimulator.roi.new_days}일 가정 · 자본비용 {((performanceSimulator.roi.cost_of_capital_pct ?? 0) * 100).toFixed(0)}%
@@ -963,7 +1041,7 @@ export default function RecommendationPage() {
                   <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📈 주차별 매출 (엔진 적용 전 vs 후)</p>
                   <div className="h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                      <BarChart data={engineScenarioChartData.length ? engineScenarioChartData : performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                         <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                         <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
@@ -979,7 +1057,7 @@ export default function RecommendationPage() {
                   <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📉 재고 수준 (소진 속도 비교)</p>
                   <div className="h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                      <ComposedChart data={engineScenarioChartData.length ? engineScenarioChartData : performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                         <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                         <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
@@ -994,21 +1072,31 @@ export default function RecommendationPage() {
               </div>
             )}
 
-            {/* 3. 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift) — 기존 곡선 vs 성장 곡선 15% */}
+            {/* 3. 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift) — 기존 곡선 vs 성장 곡선 (엔진별 상승률 반영) */}
             {performanceSimulator.performance_lift?.chart_data && performanceSimulator.performance_lift.chart_data.length > 0 && (
               <div className="mt-6 bg-white rounded-xl border-2 border-emerald-200 p-4">
                 <p className="text-sm font-semibold text-[#1d1d1f] mb-2">📈 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift)</p>
-                <p className="text-xs text-[#6e6e73] mb-3">기존 곡선: 현재 데이터 기반 매출 추이 · 성장 곡선: 엔진 적용 시나리오(매출 15% 상승, 재고 회전 가속)</p>
+                <p className="text-xs text-[#6e6e73] mb-3">
+                  기존 곡선: 현재 데이터 기반 매출 추이 · 성장 곡선: 선택한 엔진 적용 시나리오(매출 {enginePerformance.totalSalesLiftPct}% 상승, 재고 회전 가속)
+                </p>
                 <div className="h-[260px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={performanceSimulator.performance_lift.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
+                    <ComposedChart data={enginePerformanceLiftChartData.length ? enginePerformanceLiftChartData : performanceSimulator.performance_lift.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                       <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                       <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
                       <Tooltip formatter={(value: number) => [value != null ? Number(value).toLocaleString() : '', '']} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Line type="monotone" dataKey="기존_곡선" name="기존 곡선" stroke="#64748b" strokeWidth={2} dot={{ r: 3 }} />
-                      <Line type="monotone" dataKey="성장_곡선_15" name="성장 곡선 (15% 상승)" stroke="#059669" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="성장_곡선_15"
+                        name={`성장 곡선 (${enginePerformance.totalSalesLiftPct}% 상승)`}
+                        stroke="#059669"
+                        strokeWidth={2}
+                        strokeDasharray="4 4"
+                        dot={{ r: 3 }}
+                      />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -1028,9 +1116,9 @@ export default function RecommendationPage() {
                     <BarChart
                       layout="vertical"
                       data={[
-                        { name: '총 매출 상승률', value: performanceSimulator.summary?.total_sales_lift_pct ?? 0, fill: '#0071e3' },
-                        { name: '반품 감소율', value: performanceSimulator.summary?.return_rate_reduction_pct ?? 0, fill: '#10b981' },
-                        { name: '재고 회전 가속도', value: performanceSimulator.summary?.inventory_turnover_acceleration_pct ?? 0, fill: '#f59e0b' },
+                        { name: '총 매출 상승률', value: enginePerformance.totalSalesLiftPct, fill: '#0071e3' },
+                        { name: '반품 감소율', value: enginePerformance.returnRateReductionPct, fill: '#10b981' },
+                        { name: '재고 회전 가속도', value: enginePerformance.inventoryTurnoverAccelPct, fill: '#f59e0b' },
                       ]}
                       margin={{ top: 8, right: 24, left: 100, bottom: 8 }}
                     >
@@ -1077,71 +1165,12 @@ export default function RecommendationPage() {
         ) : storeLoading ? (
           <p className="text-[#6e6e73] text-center py-12">추천 데이터 로딩 중...</p>
         ) : recommendations ? (
-          <>
-            {/* 상점별 성장 전략 엔진 — 상점별 맞춤형 모드(Dynamic Weighting) + 이익·브랜드·운영 */}
-            {recommendations?.growth_strategy && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
-                <div className="px-6 py-4 bg-slate-50 border-b border-gray-200">
-                  <h3 className="text-sm font-semibold text-[#1d1d1f]">📋 상점별 성장 전략 (상점별 맞춤형 모드)</h3>
-                  <p className="text-xs text-[#86868b] mt-1">
-                    Filter: 팔 수 없는 것/팔면 안 되는 것(COO) → Scoring: Dynamic Weighting → Output: 대화 대본
-                  </p>
-                  {recommendations.growth_strategy.internal_state && (
-                    <p className="text-sm text-[#1d1d1f] mt-2 font-medium">엔진의 상태: &quot;{recommendations.growth_strategy.internal_state}&quot;</p>
-                  )}
-                  {recommendations.growth_strategy.weights && (
-                    <p className="text-xs text-[#6e6e73] mt-1">
-                      가중치: CEO {recommendations.growth_strategy.weights.CEO?.toFixed(1)}, INV {recommendations.growth_strategy.weights.INV?.toFixed(1)}, OPS {recommendations.growth_strategy.weights.OPS?.toFixed(1)}
-                    </p>
-                  )}
-                  {recommendations.growth_strategy.fallback_used && (
-                    <p className="text-xs text-amber-700 mt-1">⚠ Fallback 사용: {recommendations.growth_strategy.fallback_reason ?? '기본 추천'}</p>
-                  )}
-                  {(recommendations.growth_strategy.filter_rejected_log?.length ?? 0) > 0 && (
-                    <p className="text-xs text-red-700 mt-1">COO 제외: {recommendations.growth_strategy.filter_rejected_log?.length}건 (호환/충전기 타입 불일치)</p>
-                  )}
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#f5f5f7]">
-                      <tr className="text-[#6e6e73] text-left">
-                        <th className="px-4 py-2">제품명</th>
-                        <th className="px-4 py-2 text-right">점수</th>
-                        <th className="px-4 py-2">선정 이유</th>
-                        <th className="px-4 py-2">판매자 대화 대본</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(recommendations.growth_strategy.recommendations ?? []).map((item, i) => (
-                        <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-2 text-[#1d1d1f]">{item.product_name ?? item.product_id}</td>
-                          <td className="px-4 py-2 text-right text-[#1d1d1f] font-medium">{item.score?.toFixed(2)}</td>
-                          <td className="px-4 py-2 text-[#6e6e73]">{item.reason ?? '-'}</td>
-                          <td className="px-4 py-2 text-[#6e6e73] text-xs max-w-xs">{item.seller_script ?? '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {recommendations.growth_strategy.reasoning_log && recommendations.growth_strategy.reasoning_log.length > 0 && (
-                  <details className="px-6 py-4 border-t border-gray-100">
-                    <summary className="text-xs font-medium text-[#6e6e73] cursor-pointer">보고용 JSON (if_then_path)</summary>
-                    <pre className="mt-2 p-4 bg-[#f5f5f7] rounded-lg text-xs overflow-x-auto max-h-64 overflow-y-auto">
-                      {JSON.stringify(recommendations.growth_strategy.reasoning_log, null, 2)}
-                    </pre>
-                  </details>
-                )}
-              </div>
-            )}
-
-            {/* 하단 가이드 */}
-            <div className="mt-8 p-4 rounded-xl bg-[#f0f9ff] border border-[#bae6fd] text-sm text-[#0c4a6e]">
-              <p className="font-medium mb-1">💡 팁</p>
-              <p>
-                상점별 성장 전략 엔진 추천을 반영해 발주·재고를 계획하세요.
-              </p>
-            </div>
-          </>
+          <div className="mt-8 p-4 rounded-xl bg-[#f0f9ff] border border-[#bae6fd] text-sm text-[#0c4a6e]">
+            <p className="font-medium mb-1">💡 팁</p>
+            <p>
+              상점별 성장 전략 엔진 추천을 반영해 발주·재고를 계획하세요.
+            </p>
+          </div>
         ) : (
           <p className="text-[#86868b] text-center py-12">추천 데이터를 불러올 수 없습니다. (Real-time execution and performance dashboard 연동 확인)</p>
         )}

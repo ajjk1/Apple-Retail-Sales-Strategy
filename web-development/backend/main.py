@@ -1692,7 +1692,7 @@ def api_recommendation_summary():
 
 
 @app.get("/api/performance-simulator")
-def api_performance_simulator(engine: Optional[str] = None):
+def api_performance_simulator():
     """
     성과 시뮬레이터: Scenario Generator + ROI Calculator + Visual Summary.
     투자자용 실효성 증명 — 엔진 적용 전·후 매출/재고 비교, 기회비용 절감, 매출 상승률·반품 감소율·재고 회전 가속도.
@@ -1707,7 +1707,7 @@ def api_performance_simulator(engine: Optional[str] = None):
     if get_performance_simulator_from_realtime is None:
         return fallback
     try:
-        return get_performance_simulator_from_realtime(engine=engine)
+        return get_performance_simulator_from_realtime()
     except Exception as e:
         print(f"[Apple Retail API] api_performance_simulator 오류: {e}")
         return fallback
