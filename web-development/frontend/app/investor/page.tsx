@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { apiGet } from '../../lib/api';
+import { useSearchParams } from 'next/navigation';
 import {
   BarChart,
   Bar,
@@ -72,6 +73,10 @@ interface PerformanceSimulator {
 }
 
 export default function InvestorDashboardPage() {
+  const searchParams = useSearchParams();
+  const contextStoreId = searchParams.get('store_id');
+  const contextProduct = searchParams.get('product');
+
   const [kpi, setKpi] = useState<SafetyStockKpi | null>(null);
   const [inventoryFrozen, setInventoryFrozen] = useState<InventoryFrozenMoneyResponse | null>(null);
   const [simulator, setSimulator] = useState<PerformanceSimulator | null>(null);
@@ -168,6 +173,13 @@ export default function InvestorDashboardPage() {
             <div>
               <h1 className="text-xl font-bold text-[#1d1d1f]">📊 투자자용 대시보드</h1>
               <p className="text-xs text-[#86868b] mt-0.5">dashboard_sales_data 기반 · 재고 가치 · 엔진 성과 · 상태 알림</p>
+              {(contextStoreId || contextProduct) && (
+                <p className="text-[11px] text-[#6e6e73] mt-1">
+                  추천 대시보드 컨텍스트:
+                  {contextStoreId && <> 매장 ID {contextStoreId}</>}
+                  {contextProduct && <> · 제품 {contextProduct}</>}
+                </p>
+              )}
             </div>
           </div>
         </div>

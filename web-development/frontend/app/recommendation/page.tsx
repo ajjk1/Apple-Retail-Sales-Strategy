@@ -273,6 +273,15 @@ export default function RecommendationPage() {
   /** 실시간 재고·자금 동결 테이블: 투자자 경고 필터 (전체 / 경고만 / 경고 제외) */
   const [investorWarningFilter, setInvestorWarningFilter] = useState<'all' | 'alert' | 'no_alert'>('all');
 
+  // 추천 대시보드 → 투자자/판매자 대시보드 딥링크용 공통 쿼리 문자열 생성
+  const buildDeepLinkQuery = (includeProduct: boolean) => {
+    const params = new URLSearchParams();
+    if (selectedStoreId) params.set('store_id', selectedStoreId);
+    if (includeProduct && selectedRecommendationProduct) params.set('product', selectedRecommendationProduct);
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  };
+
   // [4.3.2] 추천 상품 목록: userPersonalizedRec.top_3 또는 collabFilterRec.top_recommendations
   const feedbackProductList = useMemo(() => {
     const fromTop3 = userPersonalizedRec?.top_3?.map((r) => r.product_name) ?? [];
@@ -1004,8 +1013,26 @@ export default function RecommendationPage() {
         {/* 성과 시뮬레이터 — 투자자용 실효성 증명 (4-Engine 클릭 시 연동·시각화) */}
         {performanceSimulator && (
           <div id="performance-simulator-section" className="bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
-            <h2 className="text-lg font-bold text-[#1d1d1f] mb-2">📊 성과 시뮬레이터</h2>
-            <p className="text-xs text-[#6e6e73] mb-2">엔진 적용 전·후 매출·재고 비교 · 기회비용 절감 · 실효성 지표</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+              <div>
+                <h2 className="text-lg font-bold text-[#1d1d1f]">📊 성과 시뮬레이터</h2>
+                <p className="text-xs text-[#6e6e73] mt-1">엔진 적용 전·후 매출·재고 비교 · 기회비용 절감 · 실효성 지표</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/investor${buildDeepLinkQuery(true)}`}
+                  className="inline-flex items-center px-3 py-1.5 rounded-full border border-emerald-300 bg-emerald-50 text-xs font-medium text-emerald-800 hover:bg-emerald-100 transition-colors"
+                >
+                  투자자 대시보드에서 자세히 보기 →
+                </Link>
+                <Link
+                  href={`/seller${buildDeepLinkQuery(true)}`}
+                  className="inline-flex items-center px-3 py-1.5 rounded-full border border-[#0071e3] bg-white text-xs font-medium text-[#0071e3] hover:bg-blue-50 transition-colors"
+                >
+                  판매자 퀵 대시보드에서 보기 →
+                </Link>
+              </div>
+            </div>
             {selectedEngineKey && (
               <p className="text-sm text-[#0071e3] font-medium mb-4">
                 연동된 엔진: {selectedEngineKey === 'association' && 'Association Engine'}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { apiGet } from '../../lib/api';
 import { stripApplePrefix, formatStoreDisplay } from '../../lib/country';
 
@@ -52,8 +53,12 @@ interface InventoryFrozenResponse {
 }
 
 export default function SellerQuickDashboardPage() {
+  const searchParams = useSearchParams();
+  const initialStoreId = searchParams.get('store_id') ?? '';
+  const initialProduct = searchParams.get('product') ?? '';
+
   const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(initialStoreId);
   const [rec, setRec] = useState<StoreRecommendationsResponse | null>(null);
   const [inventory, setInventory] = useState<InventoryFrozenResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -86,11 +91,17 @@ export default function SellerQuickDashboardPage() {
       .then(([r, inv]) => {
         setRec(r ?? null);
         setInventory(inv ?? null);
-        setRecIndex(0);
+
+        if (r?.growth_strategy?.recommendations && initialProduct) {
+          const idx = r.growth_strategy.recommendations.findIndex((item) => item.product_name === initialProduct);
+          setRecIndex(idx >= 0 ? idx : 0);
+        } else {
+          setRecIndex(0);
+        }
       })
       .catch(() => setRec(null))
       .finally(() => setLoading(false));
-  }, [selectedStoreId]);
+  }, [selectedStoreId, initialProduct]);
 
   const signal = useMemo(() => {
     if (!current?.product_name || !inventory?.items?.length) return null;

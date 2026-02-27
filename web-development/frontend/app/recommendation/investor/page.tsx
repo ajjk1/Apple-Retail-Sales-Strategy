@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { apiGet } from '../../../lib/api';
+import { useSearchParams } from 'next/navigation';
 import {
   BarChart,
   Bar,
@@ -72,6 +73,10 @@ interface PerformanceSimulator {
 }
 
 export default function InvestorDashboardPage() {
+  const searchParams = useSearchParams();
+  const contextStoreId = searchParams.get('store_id');
+  const contextProduct = searchParams.get('product');
+
   const [kpi, setKpi] = useState<SafetyStockKpi | null>(null);
   const [inventoryFrozen, setInventoryFrozen] = useState<InventoryFrozenMoneyResponse | null>(null);
   const [simulator, setSimulator] = useState<PerformanceSimulator | null>(null);
@@ -156,6 +161,13 @@ export default function InvestorDashboardPage() {
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-8">
+      {(contextStoreId || contextProduct) && (
+        <div className="mb-4 text-xs text-[#6e6e73]">
+          추천 대시보드 컨텍스트:
+          {contextStoreId && <> 매장 ID {contextStoreId}</>}
+          {contextProduct && <> · 제품 {contextProduct}</>}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
           <p className="text-sm text-[#86868b] mb-1">총 동결 자금 합계</p>
