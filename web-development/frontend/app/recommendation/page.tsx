@@ -365,9 +365,9 @@ export default function RecommendationPage() {
     };
 
     const w = WEIGHTS[key] ?? WEIGHTS.baseline;
-    const totalSalesLiftPct = Number((baseTotal * w.sales).toFixed(1));
-    const returnRateReductionPct = Number((baseReturn * w.returns).toFixed(1));
-    const inventoryTurnoverAccelPct = Number((baseTurnover * w.turnover).toFixed(1));
+    const totalSalesLiftPct = Math.round(baseTotal * w.sales);
+    const returnRateReductionPct = Math.round(baseReturn * w.returns);
+    const inventoryTurnoverAccelPct = Math.round(baseTurnover * w.turnover);
     const opportunityCostSavedAnnual = Math.round(baseRoi * w.roi);
 
     return {
@@ -754,20 +754,12 @@ export default function RecommendationPage() {
             {inventoryFrozenTableItems.length > 0 && (
               <div className="overflow-x-auto max-h-[320px] overflow-y-auto">
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                  <p className="text-xs text-[#86868b]">아래 표: 안전재고 대시보드(safety-stock-inventory-list) 동일 데이터 · <span className="text-[#0071e3]">상점명을 클릭하면 해당 상점의 맞춤형 추천 엔진(4-Engine)으로 연동됩니다.</span></p>
-                  <label className="flex items-center gap-2 text-xs text-[#6e6e73]">
-                    <span>투자자 경고 필터:</span>
-                    <select
-                      value={investorWarningFilter}
-                      onChange={(e) => setInvestorWarningFilter(e.target.value as 'all' | 'alert' | 'no_alert')}
-                      className="border border-gray-200 rounded px-2 py-1 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3]"
-                    >
-                      <option value="all">전체</option>
-                      <option value="alert">경고만</option>
-                      <option value="no_alert">경고 제외</option>
-                    </select>
-                    <span className="text-[#86868b]">({filteredInventoryFrozenTableItems.length}건)</span>
-                  </label>
+                  <p className="text-xs text-[#86868b]">
+                    아래 표: 안전재고 대시보드(safety-stock-inventory-list) 동일 데이터 ·{' '}
+                    <span className="text-[#0071e3]">
+                      상점명을 클릭하면 해당 상점의 맞춤형 추천 엔진(4-Engine)으로 연동됩니다.
+                    </span>
+                  </p>
                 </div>
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
@@ -779,7 +771,23 @@ export default function RecommendationPage() {
                       <th className="py-2 pr-3 text-right">안전재고</th>
                       <th className="py-2 pr-3 text-right">자금동결 ($)</th>
                       <th className="py-2 pr-3">Status</th>
-                      <th className="py-2">투자자 경고</th>
+                      <th className="py-2 align-top">
+                        <div className="flex items-center gap-2 justify-start text-xs text-[#6e6e73]">
+                          <span>투자자 경고</span>
+                          <select
+                            value={investorWarningFilter}
+                            onChange={(e) => setInvestorWarningFilter(e.target.value as 'all' | 'alert' | 'no_alert')}
+                            className="border border-gray-200 rounded px-2 py-1 bg-white text-[#1d1d1f] focus:outline-none focus:ring-1 focus:ring-[#0071e3]"
+                          >
+                            <option value="all">전체</option>
+                            <option value="alert">경고만</option>
+                            <option value="no_alert">경고 제외</option>
+                          </select>
+                        </div>
+                        <div className="mt-1 text-[11px] text-[#86868b]">
+                          ({filteredInventoryFrozenTableItems.length}건)
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1059,7 +1067,13 @@ export default function RecommendationPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                         <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                         <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
-                        <Tooltip formatter={(value: number) => [value?.toLocaleString(), '']} />
+                        <Tooltip
+                          formatter={(value: number) => {
+                            if (value == null || Number.isNaN(Number(value))) return ['', ''];
+                            const rounded = Math.round(Number(value));
+                            return [rounded.toLocaleString(), ''];
+                          }}
+                        />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Bar dataKey="sales_before" name="엔진 적용 전" fill="#94a3b8" radius={[2, 2, 0, 0]} />
                         <Bar dataKey="sales_after" name="엔진 적용 후" fill="#0071e3" radius={[2, 2, 0, 0]} />
@@ -1075,7 +1089,13 @@ export default function RecommendationPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                         <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                         <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
-                        <Tooltip formatter={(value: number) => [value?.toLocaleString(), '']} />
+                        <Tooltip
+                          formatter={(value: number) => {
+                            if (value == null || Number.isNaN(Number(value))) return ['', ''];
+                            const rounded = Math.round(Number(value));
+                            return [rounded.toLocaleString(), ''];
+                          }}
+                        />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Line type="monotone" dataKey="inventory_before" name="엔진 적용 전" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} />
                         <Line type="monotone" dataKey="inventory_after" name="엔진 적용 후" stroke="#0ea5e9" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} />
@@ -1099,7 +1119,13 @@ export default function RecommendationPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#e5e5e7" />
                       <XAxis dataKey="period" tick={{ fontSize: 10 }} stroke="#6e6e73" />
                       <YAxis tick={{ fontSize: 10 }} stroke="#6e6e73" />
-                      <Tooltip formatter={(value: number) => [value != null ? Number(value).toLocaleString() : '', '']} />
+                      <Tooltip
+                        formatter={(value: number) => {
+                          if (value == null || Number.isNaN(Number(value))) return ['', ''];
+                          const rounded = Math.round(Number(value));
+                          return [rounded.toLocaleString(), ''];
+                        }}
+                      />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
                       <Line type="monotone" dataKey="기존_곡선" name="기존 곡선" stroke="#64748b" strokeWidth={2} dot={{ r: 3 }} />
                       <Line
@@ -1114,11 +1140,36 @@ export default function RecommendationPage() {
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-                {performanceSimulator.performance_lift.investor_message && (
-                  <p className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900 italic">
-                    &quot;{performanceSimulator.performance_lift.investor_message}&quot;
-                  </p>
-                )}
+                {(() => {
+                  // 선택된 제품명과 엔진별 상승률을 바탕으로 인사이트 문구 생성
+                  const name = selectedRecommendationProduct;
+                  const lift = enginePerformance.totalSalesLiftPct ?? 0;
+                  if (!name) {
+                    if (!performanceSimulator.performance_lift.investor_message) return null;
+                    return (
+                      <p className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900 italic">
+                        &quot;{performanceSimulator.performance_lift.investor_message}&quot;
+                      </p>
+                    );
+                  }
+
+                  let insight: string;
+                  if (lift >= 30) {
+                    insight = `${name}는 단순한 추측이 아닙니다. 이미 코드에 박혀 있는 ${lift}% 수준의 성장 곡선이 투자 관점에서 의미 있는 업사이드를 보여줍니다.`;
+                  } else if (lift >= 15) {
+                    insight = `${name}는 안정적인 성장 구간에 들어와 있습니다. 시뮬레이션 상 약 ${lift}% 매출 상승이 반복적으로 관측되며, 지금의 전략을 유지·강화할 근거가 됩니다.`;
+                  } else if (lift > 0) {
+                    insight = `${name}는 방어적인 포지션에 가깝지만, 약 ${lift}% 수준의 개선 여지가 있습니다. 재고와 가격 전략을 함께 조정하면 추가 업사이드가 기대됩니다.`;
+                  } else {
+                    insight = `${name}는 현재 전략 하에서는 뚜렷한 상승 신호가 약합니다. 재고 비중을 조정하거나 다른 핵심 상품과의 번들 전략을 검토할 시점입니다.`;
+                  }
+
+                  return (
+                    <p className="mt-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-900 italic">
+                      &quot;{insight}&quot;
+                    </p>
+                  );
+                })()}
               </div>
             )}
 
@@ -1179,12 +1230,7 @@ export default function RecommendationPage() {
         ) : storeLoading ? (
           <p className="text-[#6e6e73] text-center py-12">추천 데이터 로딩 중...</p>
         ) : recommendations ? (
-          <div className="mt-8 p-4 rounded-xl bg-[#f0f9ff] border border-[#bae6fd] text-sm text-[#0c4a6e]">
-            <p className="font-medium mb-1">💡 팁</p>
-            <p>
-              상점별 성장 전략 엔진 추천을 반영해 발주·재고를 계획하세요.
-            </p>
-          </div>
+          <></>
         ) : (
           <p className="text-[#86868b] text-center py-12">추천 데이터를 불러올 수 없습니다. (Real-time execution and performance dashboard 연동 확인)</p>
         )}
