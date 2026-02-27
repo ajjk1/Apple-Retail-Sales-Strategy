@@ -268,6 +268,8 @@ export default function RecommendationPage() {
   const [selectedFunnelStage, setSelectedFunnelStage] = useState<string>('Add_to_Cart');
   /** 4대 엔진 중 클릭한 엔진 — 해당 엔진 추천 결과를 대시보드에 표시 */
   const [selectedEngineKey, setSelectedEngineKey] = useState<'association' | 'similar_store' | 'latent_demand' | 'trend' | null>(null);
+  /** 추천 결과 테이블에서 선택한 제품명 — 주차별 매출·재고 수준·Performance Lift 차트와 연동 표시 */
+  const [selectedRecommendationProduct, setSelectedRecommendationProduct] = useState<string | null>(null);
   /** 실시간 재고·자금 동결 테이블: 투자자 경고 필터 (전체 / 경고만 / 경고 제외) */
   const [investorWarningFilter, setInvestorWarningFilter] = useState<'all' | 'alert' | 'no_alert'>('all');
 
@@ -952,7 +954,19 @@ export default function RecommendationPage() {
                           {list.map((row, i) => (
                             <tr key={i} className="border-b border-gray-100">
                               <td className="py-2 text-[#1d1d1f]">{i + 1}</td>
-                              <td className="py-2 text-[#1d1d1f]">{row.product_name ?? '-'}</td>
+                              <td className="py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const name = row.product_name ?? null;
+                                    setSelectedRecommendationProduct(name);
+                                    document.getElementById('performance-simulator-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                  }}
+                                  className="text-[#0071e3] hover:underline font-medium text-left"
+                                >
+                                  {row.product_name ?? '-'}
+                                </button>
+                              </td>
                               <td className="py-2 text-right font-medium text-[#1d1d1f]">
                                 {sk === 'lift' && row.lift != null && row.lift.toFixed(2)}
                                 {sk === 'similarity_score' && row.similarity_score != null && row.similarity_score.toFixed(2)}
@@ -1038,7 +1052,7 @@ export default function RecommendationPage() {
             {performanceSimulator.scenario?.chart_data && performanceSimulator.scenario.chart_data.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📈 주차별 매출 (엔진 적용 전 vs 후)</p>
+                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📈 주차별 매출 (엔진 적용 전 vs 후){selectedRecommendationProduct ? <span className="ml-2 text-[#0071e3] font-normal">· 선택 제품: {selectedRecommendationProduct}</span> : null}</p>
                   <div className="h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={engineScenarioChartData.length ? engineScenarioChartData : performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
@@ -1054,7 +1068,7 @@ export default function RecommendationPage() {
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📉 재고 수준 (소진 속도 비교)</p>
+                  <p className="text-sm font-semibold text-[#1d1d1f] mb-3">📉 재고 수준 (소진 속도 비교){selectedRecommendationProduct ? <span className="ml-2 text-[#0071e3] font-normal">· 선택 제품: {selectedRecommendationProduct}</span> : null}</p>
                   <div className="h-[260px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <ComposedChart data={engineScenarioChartData.length ? engineScenarioChartData : performanceSimulator.scenario.chart_data} margin={{ top: 8, right: 8, left: 8, bottom: 24 }}>
@@ -1075,7 +1089,7 @@ export default function RecommendationPage() {
             {/* 3. 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift) — 기존 곡선 vs 성장 곡선 (엔진별 상승률 반영) */}
             {performanceSimulator.performance_lift?.chart_data && performanceSimulator.performance_lift.chart_data.length > 0 && (
               <div className="mt-6 bg-white rounded-xl border-2 border-emerald-200 p-4">
-                <p className="text-sm font-semibold text-[#1d1d1f] mb-2">📈 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift)</p>
+                <p className="text-sm font-semibold text-[#1d1d1f] mb-2">📈 전략 실행 후 기대 수익 시뮬레이션 (Performance Lift){selectedRecommendationProduct ? <span className="ml-2 text-[#0071e3] font-normal">· 선택 제품: {selectedRecommendationProduct}</span> : null}</p>
                 <p className="text-xs text-[#6e6e73] mb-3">
                   기존 곡선: 현재 데이터 기반 매출 추이 · 성장 곡선: 선택한 엔진 적용 시나리오(매출 {enginePerformance.totalSalesLiftPct}% 상승, 재고 회전 가속)
                 </p>
