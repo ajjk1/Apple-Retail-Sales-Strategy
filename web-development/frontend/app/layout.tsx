@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Apple 리테일 대시보드',
-  description: 'Apple 리테일 재고 전략 현황',
+  description: 'AI 활용한 수요 매층 재고 추천 시스템',
 };
 
 export default function RootLayout({

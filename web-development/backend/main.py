@@ -871,7 +871,7 @@ def load_retail_data():
                     pass
             _cached_last_updated = _compute_last_updated(df)
             return {
-                "title": "Apple 리테일 재고 전략 현황",
+                "title": "AI 활용한 수요 매층 재고 추천 시스템",
                 "status": "정상",
                 "last_updated": _cached_last_updated,
                 "summary": {
@@ -950,7 +950,7 @@ def load_retail_data():
         ]
     _cached_last_updated = _compute_last_updated(df)
     return {
-        "title": "Apple 리테일 재고 전략 현황",
+        "title": "AI 활용한 수요 매층 재고 추천 시스템",
         "status": "정상",
         "last_updated": _cached_last_updated,
         "summary": {
@@ -2100,7 +2100,7 @@ def _apple_data_fallback():
     """데이터 로드 실패 시 동일 형식으로 폴백 반환 (대시보드 오류 방지)."""
     fallback_date = _today_kst()
     return {
-        "title": "Apple 리테일 재고 전략 현황",
+        "title": "AI 활용한 수요 매층 재고 추천 시스템",
         "status": "데이터 파일 없음",
         "last_updated": fallback_date,
         "summary": {},

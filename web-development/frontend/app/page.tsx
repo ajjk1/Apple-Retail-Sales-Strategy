@@ -1288,7 +1288,7 @@ export default function Home() {
       <header className="pt-10 pb-8 text-center relative">
         <div className="flex items-center justify-center gap-3">
           <span className="text-4xl">🍎</span>
-          <h1 className="text-3xl md:text-4xl font-bold text-[#1d1d1f] tracking-tight">Apple 리테일 전략</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-[#1d1d1f] tracking-tight">AI 기반 지능형 지역 마케팅</h1>
         </div>
         <button
           type="button"
@@ -1304,10 +1304,10 @@ export default function Home() {
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 lg:col-span-2">
             <h2 className="text-2xl font-bold text-[#1d1d1f] mb-2">
-              Apple 리테일 재고 전략 현황
+              AI 활용한 수요 매층 재고 추천 시스템
             </h2>
             <p className="text-[#6e6e73] text-base">
-              예측 모델과 연동되어 제고 최적화 전략을 실시간으로 제공합니다.
+              AI 활용한 수요 매층 재고 추천 시스템
             </p>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">

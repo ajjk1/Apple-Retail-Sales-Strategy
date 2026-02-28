@@ -4,16 +4,16 @@
       <div class="flex items-center justify-center gap-3">
         <span class="text-4xl">🍎</span>
         <h1 class="text-3xl md:text-4xl font-bold text-[#1d1d1f] tracking-tight">
-          Apple 리테일 전략 (Vue.js)
+          AI 기반 지능형 지역 마케팅 (Vue.js)
         </h1>
       </div>
     </header>
 
     <div class="max-w-4xl mx-auto px-6 pb-16">
       <section class="bg-white rounded-2xl p-8 mb-6 shadow-sm border border-gray-100">
-        <h2 class="text-2xl font-bold text-[#1d1d1f] mb-2">Apple 리테일 재고 전략 현황</h2>
+        <h2 class="text-2xl font-bold text-[#1d1d1f] mb-2">AI 활용한 수요 매층 재고 추천 시스템</h2>
         <p class="text-[#6e6e73] text-base">
-          Vue.js + 동일 백엔드 API 연동. 예측 모델과 제고 최적화 전략을 확인할 수 있습니다.
+          AI 활용한 수요 매층 재고 추천 시스템
         </p>
       </section>
 
