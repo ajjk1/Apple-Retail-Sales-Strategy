@@ -1306,9 +1306,6 @@ export default function Home() {
             <h2 className="text-2xl font-bold text-[#1d1d1f] mb-2">
               AI를 활용한 수요 예측 및 재고 최적화 솔루션
             </h2>
-            <p className="text-[#6e6e73] text-base">
-              AI를 활용한 수요 예측 및 재고 최적화 솔루션
-            </p>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h3 className="text-sm font-medium text-[#6e6e73] mb-4">마지막 업데이트</h3>
