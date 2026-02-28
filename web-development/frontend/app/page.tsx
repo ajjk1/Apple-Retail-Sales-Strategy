@@ -1304,10 +1304,10 @@ export default function Home() {
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 lg:col-span-2">
             <h2 className="text-2xl font-bold text-[#1d1d1f] mb-2">
-              AI 활용한 수요 매층 재고 추천 시스템
+              AI를 활용한 수요 예측 및 재고 최적화 솔루션
             </h2>
             <p className="text-[#6e6e73] text-base">
-              AI 활용한 수요 매층 재고 추천 시스템
+              AI를 활용한 수요 예측 및 재고 최적화 솔루션
             </p>
           </div>
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
