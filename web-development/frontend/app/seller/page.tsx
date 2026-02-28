@@ -46,6 +46,7 @@ interface InventoryItem {
   Inventory?: number;
   Safety_Stock?: number;
   Status?: string;
+  Frozen_Money?: number;
 }
 
 interface InventoryFrozenResponse {
@@ -116,6 +117,36 @@ export default function SellerQuickDashboardPage() {
     if (safeVal <= 0) return 'green';
     return invVal < safeVal ? 'red' : 'green';
   }, [current?.product_name, inventory, storeName]);
+
+  // 현재 추천 상품의 재고 행 (한 줄 요약·대시보드 연계 문구용)
+  const currentInvItem = useMemo(() => {
+    if (!current?.product_name || !inventory?.items?.length) return null;
+    const productMatch = (row: InventoryItem) =>
+      row.Product_Name === current.product_name || (row.Product_Name ?? '').includes(current.product_name ?? '') || (current.product_name ?? '').includes(row.Product_Name ?? '');
+    const storeMatch = (row: InventoryItem) => !row.Store_Name || !storeName || row.Store_Name === storeName || (storeName && row.Store_Name.includes(storeName));
+    return inventory.items.find((row) => productMatch(row) && storeMatch(row))
+      ?? inventory.items.find((row) => productMatch(row))
+      ?? null;
+  }, [current?.product_name, inventory?.items, storeName]);
+
+  // 지금 추천 한 줄 요약: 안전재고·투자자·추천 대시보드와 연계된 알맞는 문구
+  const recommendationSummaryText = useMemo(() => {
+    const base = current?.reason?.trim() || '';
+    if (signal === 'red') {
+      const dashboardNote = '안전재고 대시보드와 연동된 상태로, 재고가 안전재고보다 낮아 품절 위험이 있습니다. ';
+      return base ? `${dashboardNote}${base}` : `${dashboardNote}빨리 판매를 유도하세요.`;
+    }
+    if (signal === 'green') {
+      const frozen = currentInvItem && Number(currentInvItem.Frozen_Money) > 0;
+      if (frozen) {
+        const note = '투자자 대시보드(자금 동결)·추천 대시보드와 연계된 추천입니다. ';
+        return base ? `${note}${base}` : `${note}재고가 충분해 판매 시 자금 회전에 도움이 됩니다.`;
+      }
+      const note = '추천 대시보드·성과 시뮬레이터와 연동된 맞춤 추천입니다. ';
+      return base ? `${note}${base}` : `${note}이 상품 판매가 매장 성과에 기여합니다.`;
+    }
+    return base || '추천 대시보드와 연동된 맞춤 추천입니다.';
+  }, [current?.reason, signal, currentInvItem]);
 
   const totalSales = rec?.store_summary?.total_sales ?? 0;
   const contributionBase = current?.score != null ? Math.round(current.score * 100) : (list.length - recIndex) * 25;
@@ -191,7 +222,7 @@ export default function SellerQuickDashboardPage() {
                 {current.product_name ?? current.product_id ?? '—'}
               </p>
               <p className="text-base text-[#6e6e73]">
-                {current.reason ?? '추천 이유 없음'}
+                {recommendationSummaryText}
               </p>
             </section>
 
