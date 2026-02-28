@@ -174,23 +174,35 @@ export default function SellerQuickDashboardPage() {
   const expectedScore = contributionBase + soldCount * 10;
   const contributionPct = totalSales > 0 && current?.score != null ? Math.min(100, Math.round((current.score / 1) * 15)) : null;
 
+  // 함께 사는 아이템: association 목록 상품명 (지금 추천 카드와 오늘의 추천 멘트 연동)
+  const associationProductNames = useMemo(() => {
+    const list = rec?.association ?? [];
+    return list.map((a) => (a.product_name ?? '').trim()).filter(Boolean);
+  }, [rec?.association]);
+
   const { mentText, mentTag, copyText } = useMemo(() => {
-    const hasAssociation = (rec?.association?.length ?? 0) > 0;
+    const hasAssociation = associationProductNames.length > 0;
     const isLowStock = current != null && signal === 'red';
     let text: string;
     let tag: string;
+    let copy: string;
     if (isLowStock) {
       text = '품절 임박';
       tag = '마감 임박';
+      copy = `${text} [${tag}]`;
     } else if (hasAssociation) {
       text = '함께 사는 아이템';
       tag = '가성비 추천';
+      const names = associationProductNames.slice(0, 5).join(', ');
+      const withCurrent = current?.product_name ? `${current.product_name}과 함께 구매 추천: ${names}` : `함께 사는 아이템: ${names}`;
+      copy = `${withCurrent} [${tag}]`;
     } else {
       text = '오늘의 추천';
       tag = '신뢰 강조';
+      copy = `${text} [${tag}]`;
     }
-    return { mentText: text, mentTag: tag, copyText: `${text} [${tag}]` };
-  }, [rec?.association?.length, current, signal]);
+    return { mentText: text, mentTag: tag, copyText: copy };
+  }, [associationProductNames, current?.product_name, signal]);
 
   const handleCopyMent = () => {
     navigator.clipboard.writeText(copyText).catch(() => {});
@@ -273,6 +285,9 @@ export default function SellerQuickDashboardPage() {
 
           <section className="bg-white rounded-2xl border border-amber-200 shadow-sm p-6 bg-gradient-to-br from-amber-50/50 to-white">
             <h2 className="text-sm font-medium text-[#86868b] mb-2">인센티브 · total_sales 기여도</h2>
+            {associationProductNames.length > 0 && (
+              <p className="text-xs text-[#0071e3] mb-2">연관성 데이터(함께 사는 아이템)와 연동 · 해당 상품 및 함께 구매 추천 판매 시 기여도 반영</p>
+            )}
             <p className="text-3xl font-bold text-[#1d1d1f] mb-1">
               예상 기여 점수: <span className="text-[#0071e3]">{expectedScore}</span>
             </p>
@@ -299,6 +314,11 @@ export default function SellerQuickDashboardPage() {
           <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mt-6">
             <h2 className="text-sm font-medium text-[#86868b] mb-3">오늘의 추천 멘트</h2>
             <p className="text-lg font-semibold text-[#1d1d1f] mb-2">{mentText}</p>
+            {mentText === '함께 사는 아이템' && associationProductNames.length > 0 && (
+              <p className="text-sm text-[#6e6e73] mb-2">
+                함께 구매 추천: {associationProductNames.slice(0, 5).join(', ')}
+              </p>
+            )}
             <p className="text-sm text-[#6e6e73] mb-4">
               <span className="inline-block px-2 py-1 rounded-md bg-[#f5f5f7] text-[#1d1d1f] font-medium">[{mentTag}]</span>
             </p>
@@ -321,11 +341,16 @@ export default function SellerQuickDashboardPage() {
         </div>
       )}
 
-      {/* [3.4.1] 매장 등급 및 달성률 분석 */}
+      {/* 매장 등급 및 달성률 분석 — 연관성 데이터와 연동 */}
       {storePerformanceGrade && (storePerformanceGrade.store_performance?.length > 0 || storePerformanceGrade.grade_distribution?.length > 0) && (
         <section className="mt-8 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
           <h3 className="text-sm font-medium text-[#6e6e73] mb-1 px-6 pt-6">매장 등급 및 달성률 분석</h3>
-          <p className="text-xs text-[#86868b] px-6 mb-4">연간 예측(2025) 대비 매장당 목표 달성률 · S(≥100%) / A(80~100%) / C(기본)</p>
+          <p className={`text-xs text-[#86868b] px-6 ${associationProductNames.length > 0 ? 'mb-1' : 'mb-4'}`}>
+            연간 예측(2025) 대비 매장당 목표 달성률 · S(≥100%) / A(80~100%) / C(기본)
+          </p>
+          {associationProductNames.length > 0 && (
+            <p className="text-xs text-[#0071e3] px-6 mb-4">연관성 데이터(함께 사는 아이템 {associationProductNames.length}건)와 연동 · 선택 매장 추천과 연계</p>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 pb-6">
             <div>
               <p className="text-xs font-medium text-[#6e6e73] mb-2">매장 성과 등급 분포 (파이 차트)</p>
@@ -406,20 +431,24 @@ export default function SellerQuickDashboardPage() {
         </section>
       )}
 
-      {rec && !current && (rec?.association?.length ?? 0) > 0 && (
+      {rec && !current && associationProductNames.length > 0 && (
         <section className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mt-6">
           <h2 className="text-sm font-medium text-[#86868b] mb-3">오늘의 추천 멘트</h2>
           <p className="text-lg font-semibold text-[#1d1d1f] mb-2">함께 사는 아이템</p>
+          <p className="text-sm text-[#6e6e73] mb-2">
+            함께 구매 추천: {associationProductNames.slice(0, 5).join(', ')}
+          </p>
           <p className="text-sm text-[#6e6e73] mb-4">
             <span className="inline-block px-2 py-1 rounded-md bg-[#f5f5f7] text-[#1d1d1f] font-medium">[가성비 추천]</span>
           </p>
           <button
             type="button"
-            onClick={() => navigator.clipboard.writeText('함께 사는 아이템 [가성비 추천]').catch(() => {})}
+            onClick={() => navigator.clipboard.writeText(`함께 사는 아이템: ${associationProductNames.slice(0, 5).join(', ')} [가성비 추천]`).catch(() => {})}
             className="w-full py-3 rounded-xl bg-[#0071e3] text-white font-semibold hover:opacity-90 transition-opacity"
           >
             문구 복사하기
           </button>
+          <p className="text-xs text-[#86868b] mt-2 text-center">복사한 문구를 메시지로 손님에게 보내보세요.</p>
         </section>
       )}
     </main>
