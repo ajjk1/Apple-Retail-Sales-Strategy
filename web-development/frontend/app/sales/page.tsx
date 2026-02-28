@@ -24,11 +24,6 @@ export default function SalesPage() {
   const [quarterlyCategoryData, setQuarterlyCategoryData] = useState<{ period: string; year: number; quarter: number; category: string; total_sales: number }[]>([]);
   const [quarterlyLoading, setQuarterlyLoading] = useState(false);
   const [selectedCategoryForBarChart, setSelectedCategoryForBarChart] = useState<string | null>(null);
-  const [storePerformanceGrade, setStorePerformanceGrade] = useState<{
-    store_performance: { country: string; store_name: string; total_sales: number; target_annual: number; achievement_rate: number; grade: string }[];
-    grade_distribution: { grade: string; count: number; pct: number }[];
-    annual_forecast_revenue: number;
-  } | null>(null);
   const [data, setData] = useState<{
     total_sum: number;
     store_count: number;
@@ -70,20 +65,6 @@ export default function SalesPage() {
   useEffect(() => {
     fetchSalesData();
   }, [fetchSalesData]);
-
-  useEffect(() => {
-    apiGet<{ store_performance?: unknown[]; grade_distribution?: { grade: string; count: number; pct: number }[]; annual_forecast_revenue?: number }>('/api/store-performance-grade')
-      .then((json) => {
-        if (json && Array.isArray(json.store_performance)) {
-          setStorePerformanceGrade({
-            store_performance: json.store_performance as { country: string; store_name: string; total_sales: number; target_annual: number; achievement_rate: number; grade: string }[],
-            grade_distribution: (json.grade_distribution ?? []) as { grade: string; count: number; pct: number }[],
-            annual_forecast_revenue: json.annual_forecast_revenue ?? 0,
-          });
-        } else setStorePerformanceGrade(null);
-      })
-      .catch(() => setStorePerformanceGrade(null));
-  }, []);
 
   // 로딩이 15초 이상 지속되면 강제 해제 → 에러/재시도 화면 표시 (백엔드 미응답 시 멈춤 방지)
   useEffect(() => {
@@ -851,92 +832,6 @@ export default function SalesPage() {
                 </div>
               </div>
             ) : null}
-
-            {/* [3.4.1] 매장 등급 및 달성률 분석 */}
-            {storePerformanceGrade && (storePerformanceGrade.store_performance?.length > 0 || storePerformanceGrade.grade_distribution?.length > 0) && (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
-                <h3 className="text-sm font-medium text-[#6e6e73] mb-1 px-6 pt-6">[3.4.1] 매장 등급 및 달성률 분석</h3>
-                <p className="text-xs text-[#86868b] px-6 mb-4">연간 예측(2025) 대비 매장당 목표 달성률 · S(≥100%) / A(80~100%) / C(기본)</p>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 pb-6">
-                  <div>
-                    <p className="text-xs font-medium text-[#6e6e73] mb-2">매장 성과 등급 분포 (파이 차트)</p>
-                    {storePerformanceGrade.grade_distribution && storePerformanceGrade.grade_distribution.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={220}>
-                        <PieChart>
-                          <Pie
-                            data={storePerformanceGrade.grade_distribution}
-                            dataKey="pct"
-                            nameKey="grade"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={80}
-                            label={(props) => {
-                              const p = (props as { payload?: { grade?: string; pct?: number } }).payload;
-                              if (!p) return '';
-                              const pct = Number(p.pct ?? 0);
-                              // 0% 또는 매우 작은 비중은 라벨을 숨겨 겹침 방지
-                              if (!Number.isFinite(pct) || pct <= 0.01) return '';
-                              return `등급 ${p.grade ?? ''}: ${pct}%`;
-                            }}
-                          >
-                            {storePerformanceGrade.grade_distribution.map((entry, i) => (
-                              <Cell
-                                key={entry.grade}
-                                fill={entry.grade === 'S' ? '#eab308' : entry.grade === 'A' ? '#3b82f6' : '#94a3b8'}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(v: unknown) => [`${Number(v)}%`, '비중']} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <p className="text-sm text-[#6e6e73] py-8 text-center">등급 분포 데이터 없음</p>
-                    )}
-                  </div>
-                  <div className="min-w-0 overflow-x-auto">
-                    <p className="text-xs font-medium text-[#6e6e73] mb-2">매장별 달성률 (상위 20개) · 연간 목표: ₩{Number(storePerformanceGrade.annual_forecast_revenue || 0).toLocaleString()}</p>
-                    {storePerformanceGrade.store_performance && storePerformanceGrade.store_performance.length > 0 ? (
-                      <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
-                        <table className="w-full text-sm">
-                          <thead className="bg-[#f5f5f7] sticky top-0">
-                            <tr className="text-left text-[#6e6e73]">
-                              <th className="px-3 py-2">매장</th>
-                              <th className="px-3 py-2 text-right">매출</th>
-                              <th className="px-3 py-2 text-right">달성률</th>
-                              <th className="px-3 py-2">등급</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {storePerformanceGrade.store_performance
-                              .sort((a, b) => b.achievement_rate - a.achievement_rate)
-                              .slice(0, 20)
-                              .map((row, i) => (
-                                <tr key={i} className="border-t border-gray-100">
-                                  <td className="px-3 py-1.5 text-[#1d1d1f] truncate max-w-[140px]" title={row.store_name}>{row.store_name || '-'}</td>
-                                  <td className="px-3 py-1.5 text-right text-[#1d1d1f]">₩{Number(row.total_sales).toLocaleString()}</td>
-                                  <td className="px-3 py-1.5 text-right font-medium">{row.achievement_rate.toFixed(1)}%</td>
-                                  <td className="px-3 py-1.5">
-                                    <span
-                                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                                        row.grade === 'S' ? 'bg-amber-100 text-amber-800' : row.grade === 'A' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
-                                      }`}
-                                    >
-                                      {row.grade}
-                                    </span>
-                                  </td>
-                                </tr>
-                              ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-[#6e6e73] py-8 text-center">매장별 성과 데이터 없음</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
 
             {selectedCountryForStores ? (
               <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
