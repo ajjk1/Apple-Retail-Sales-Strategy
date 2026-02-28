@@ -231,6 +231,13 @@ interface FunnelStageWeightData {
   data_source_description?: string;
 }
 
+/** [3.4.1] 매장 등급 및 달성률 분석 (store-performance-grade API) — 이웃 로직 연동 */
+interface StorePerformanceGradeData {
+  store_performance: { country: string; store_name: string; total_sales: number; target_annual: number; achievement_rate: number; grade: string }[];
+  grade_distribution: { grade: string; count: number; pct: number }[];
+  annual_forecast_revenue: number;
+}
+
 export default function RecommendationPage() {
   const [loading, setLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(false);
@@ -272,6 +279,10 @@ export default function RecommendationPage() {
   const [selectedRecommendationProduct, setSelectedRecommendationProduct] = useState<string | null>(null);
   /** 실시간 재고·자금 동결 테이블: 투자자 경고 필터 (전체 / 경고만 / 경고 제외) */
   const [investorWarningFilter, setInvestorWarningFilter] = useState<'all' | 'alert' | 'no_alert'>('all');
+  /** [3.4.1] 매장 등급 및 달성률 — 이웃 로직용 데이터 */
+  const [storePerformanceGrade, setStorePerformanceGrade] = useState<StorePerformanceGradeData | null>(null);
+  /** 이웃만 보기 (동일 국가 매장만) */
+  const [storeGradeNeighborsOnly, setStoreGradeNeighborsOnly] = useState(false);
 
   // 추천 대시보드 → 투자자/판매자 대시보드 딥링크용 공통 쿼리 문자열 생성
   const buildDeepLinkQuery = (includeProduct: boolean) => {
@@ -582,11 +593,67 @@ export default function RecommendationPage() {
       .catch(() => setPerformanceSimulator(null));
   }, []);
 
+  // [3.4.1] 매장 등급 및 달성률 (이웃 로직·추천 대시보드 연동)
+  useEffect(() => {
+    apiGet<{ store_performance?: unknown[]; grade_distribution?: { grade: string; count: number; pct: number }[]; annual_forecast_revenue?: number }>('/api/store-performance-grade')
+      .then((json) => {
+        if (json && Array.isArray(json.store_performance)) {
+          setStorePerformanceGrade({
+            store_performance: json.store_performance as StorePerformanceGradeData['store_performance'],
+            grade_distribution: (json.grade_distribution ?? []) as StorePerformanceGradeData['grade_distribution'],
+            annual_forecast_revenue: json.annual_forecast_revenue ?? 0,
+          });
+        } else setStorePerformanceGrade(null);
+      })
+      .catch(() => setStorePerformanceGrade(null));
+  }, []);
+
   // 선택된 퍼널 단계에 따른 가중치·전략 (선택 변경 시 재조회)
   const funnelStageDetail = useMemo(() => {
     if (!funnelStageWeights?.stages?.length) return null;
     return funnelStageWeights.stages.find((s) => s.stage === selectedFunnelStage) ?? funnelStageWeights.stages[0];
   }, [funnelStageWeights, selectedFunnelStage]);
+
+  // [3.4.1] 이웃 로직: k = 국가로 한정 (동일 국가 내 매장만 이웃으로 간주)
+  const NEIGHBOR_K_DIMENSION = 'country' as const;
+  const selectedStore = useMemo(() => stores.find((s) => s.store_id === selectedStoreId) ?? null, [stores, selectedStoreId]);
+  const selectedStoreCountry = selectedStore?.country ?? '';
+  const storeGradeTableRows = useMemo(() => {
+    const perfs = storePerformanceGrade?.store_performance ?? [];
+    const norm = (name: string) => stripApplePrefix(name).trim().toLowerCase();
+    const selectedNameNorm = selectedStore?.store_name ? norm(selectedStore.store_name) : '';
+    // 이웃 판별: k=국가 — 동일 국가(row.country === selectedStoreCountry)만 이웃
+    let rows = perfs.map((row) => {
+      const nameNorm = norm(row.store_name);
+      const isSelected = !!selectedNameNorm && nameNorm === selectedNameNorm;
+      const isNeighbor =
+        NEIGHBOR_K_DIMENSION === 'country' && !!selectedStoreCountry && row.country === selectedStoreCountry && !isSelected;
+      return { ...row, isSelected, isNeighbor };
+    });
+    if (storeGradeNeighborsOnly && selectedStoreCountry) {
+      rows = rows.filter((r) => r.country === selectedStoreCountry);
+    }
+    return rows.sort((a, b) => b.achievement_rate - a.achievement_rate).slice(0, 20);
+  }, [storePerformanceGrade?.store_performance, selectedStore, selectedStoreCountry, storeGradeNeighborsOnly]);
+  const storeGradePieData = useMemo(() => {
+    if (!storePerformanceGrade) return [];
+    // k=국가: 이웃만 보기 시 해당 국가 매장만으로 등급 분포 계산
+    if (storeGradeNeighborsOnly && selectedStoreCountry && storePerformanceGrade.store_performance?.length) {
+      const filtered = storePerformanceGrade.store_performance.filter((r) => r.country === selectedStoreCountry);
+      if (filtered.length === 0) return storePerformanceGrade.grade_distribution;
+      const total = filtered.length;
+      const counts = { S: 0, A: 0, C: 0 };
+      filtered.forEach((r) => {
+        if (r.grade in counts) counts[r.grade as keyof typeof counts]++;
+      });
+      return ['S', 'A', 'C'].map((g) => ({
+        grade: g,
+        count: counts[g as keyof typeof counts],
+        pct: total > 0 ? Math.round((counts[g as keyof typeof counts] / total) * 1000) / 10 : 0,
+      }));
+    }
+    return storePerformanceGrade.grade_distribution ?? [];
+  }, [storePerformanceGrade, storeGradeNeighborsOnly, selectedStoreCountry]);
 
   // 선택된 store_id의 추천 데이터 + 매출 예측 + 수요 대시보드 로드 (store_type: 성장 전략 엔진용)
   useEffect(() => {
@@ -1007,6 +1074,122 @@ export default function RecommendationPage() {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* [3.4.1] 매장 등급 및 달성률 분석 — 이웃 로직으로 추천 대시보드와 연동 */}
+        {storePerformanceGrade && (storePerformanceGrade.store_performance?.length > 0 || storePerformanceGrade.grade_distribution?.length > 0) && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-8">
+            <h3 className="text-sm font-medium text-[#6e6e73] mb-1 px-6 pt-6">매장 등급 및 달성률 분석</h3>
+            <p className="text-xs text-[#86868b] px-6 mb-2">
+              연간 예측(2025) 대비 매장당 목표 달성률 · S(≥100%) / A(80~100%) / C(기본)
+            </p>
+            <p className="text-xs text-[#0071e3] px-6 mb-4">
+              이웃 로직: k=국가로 한정 · 동일 국가 매장만 이웃으로 표시 · 추천 대시보드와 연동
+            </p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 pb-6">
+              <div>
+                <p className="text-xs font-medium text-[#6e6e73] mb-2">
+                  매장 성과 등급 분포 {storeGradeNeighborsOnly && selectedStoreCountry ? '(이웃만)' : '(전체)'}
+                </p>
+                {storeGradePieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie
+                        data={storeGradePieData}
+                        dataKey="pct"
+                        nameKey="grade"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={50}
+                        outerRadius={80}
+                        label={(props) => {
+                          const p = (props as { payload?: { grade?: string; pct?: number } }).payload;
+                          if (!p) return '';
+                          const pct = Number(p.pct ?? 0);
+                          if (!Number.isFinite(pct) || pct <= 0.01) return '';
+                          return `등급 ${p.grade ?? ''}: ${pct}%`;
+                        }}
+                      >
+                        {storeGradePieData.map((entry) => (
+                          <Cell
+                            key={entry.grade}
+                            fill={entry.grade === 'S' ? '#eab308' : entry.grade === 'A' ? '#3b82f6' : '#94a3b8'}
+                          />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v: unknown) => [`${Number(v)}%`, '비중']} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm text-[#6e6e73] py-8 text-center">등급 분포 데이터 없음</p>
+                )}
+              </div>
+              <div className="min-w-0 overflow-x-auto">
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs font-medium text-[#6e6e73]">
+                    매장별 달성률 (상위 20개) · 연간 목표: ₩{Number(storePerformanceGrade.annual_forecast_revenue || 0).toLocaleString()}
+                  </p>
+                  {selectedStoreId && (
+                    <button
+                      type="button"
+                      onClick={() => setStoreGradeNeighborsOnly((v) => !v)}
+                      className={`text-xs px-2 py-1 rounded border ${storeGradeNeighborsOnly ? 'bg-[#0071e3] text-white border-[#0071e3]' : 'bg-white text-[#6e6e73] border-gray-300'}`}
+                    >
+                      {storeGradeNeighborsOnly ? '이웃만' : '전체'}
+                    </button>
+                  )}
+                </div>
+                {storeGradeTableRows.length > 0 ? (
+                  <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-[#f5f5f7] sticky top-0">
+                        <tr className="text-left text-[#6e6e73]">
+                          <th className="px-3 py-2">매장</th>
+                          <th className="px-3 py-2">국가</th>
+                          <th className="px-3 py-2 text-right">매출</th>
+                          <th className="px-3 py-2 text-right">달성률</th>
+                          <th className="px-3 py-2">등급</th>
+                          <th className="px-3 py-2">비고</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {storeGradeTableRows.map((row, i) => (
+                          <tr
+                            key={i}
+                            className={`border-t border-gray-100 ${row.isSelected ? 'bg-blue-50' : row.isNeighbor ? 'bg-slate-50' : ''}`}
+                          >
+                            <td className="px-3 py-1.5 text-[#1d1d1f] truncate max-w-[120px]" title={row.store_name}>
+                              {row.store_name || '-'}
+                            </td>
+                            <td className="px-3 py-1.5 text-[#6e6e73] text-xs">{row.country || '-'}</td>
+                            <td className="px-3 py-1.5 text-right text-[#1d1d1f]">₩{Number(row.total_sales).toLocaleString()}</td>
+                            <td className="px-3 py-1.5 text-right font-medium">{row.achievement_rate.toFixed(1)}%</td>
+                            <td className="px-3 py-1.5">
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                                  row.grade === 'S' ? 'bg-amber-100 text-amber-800' : row.grade === 'A' ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {row.grade}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-xs">
+                              {row.isSelected && <span className="text-[#0071e3] font-medium">선택 매장</span>}
+                              {row.isNeighbor && !row.isSelected && <span className="text-[#6e6e73]">이웃</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#6e6e73] py-8 text-center">
+                    {storeGradeNeighborsOnly && selectedStoreCountry ? '해당 국가 이웃 매장이 없습니다.' : '매장별 성과 데이터 없음'}
+                  </p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

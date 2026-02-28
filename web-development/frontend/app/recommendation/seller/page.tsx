@@ -324,7 +324,7 @@ export default function SellerQuickDashboardPage() {
       {/* [3.4.1] 매장 등급 및 달성률 분석 */}
       {storePerformanceGrade && (storePerformanceGrade.store_performance?.length > 0 || storePerformanceGrade.grade_distribution?.length > 0) && (
         <section className="mt-8 bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-          <h3 className="text-sm font-medium text-[#6e6e73] mb-1 px-6 pt-6">[3.4.1] 매장 등급 및 달성률 분석</h3>
+          <h3 className="text-sm font-medium text-[#6e6e73] mb-1 px-6 pt-6">매장 등급 및 달성률 분석</h3>
           <p className="text-xs text-[#86868b] px-6 mb-4">연간 예측(2025) 대비 매장당 목표 달성률 · S(≥100%) / A(80~100%) / C(기본)</p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 px-6 pb-6">
             <div>
